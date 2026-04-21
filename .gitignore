@@ -1,0 +1,9 @@
+_refs/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+dist/
