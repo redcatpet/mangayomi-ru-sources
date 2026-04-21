@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animego.js",
@@ -43,37 +43,41 @@ class DefaultExtension extends MProvider {
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        // Cards: .animes-grid-item or .media-item with inner <a href="/anime/slug">
-        let items = doc.select(".animes-grid-item, .media-item, .card-grid-item");
-        if (items.length === 0) {
-            // Fallback: any anchor directly to /anime/slug — skip genre/type/status links
-            const anchors = doc.select("a[href*='/anime/']").filter(a => {
-                const h = a.attr("href") || "";
-                return !/\/(genre|type|status|season|studio)\//.test(h);
-            });
-            const seen = {};
-            for (const a of anchors) {
-                const h = a.attr("href");
-                if (seen[h]) continue;
-                seen[h] = true;
-                const img = a.selectFirst("img");
-                const imageUrl = img ? (img.attr("src") || img.attr("data-src") || "") : "";
-                const name = (a.attr("title") || a.text || "").trim();
-                if (name) list.push({ name, imageUrl: this.absUrl(imageUrl), link: h });
-            }
-            return { list, hasNextPage: list.length >= 20 };
-        }
-        for (const it of items) {
-            const a = it.selectFirst("a[href*='/anime/']");
-            if (!a) continue;
-            const href = a.attr("href");
-            const img = it.selectFirst("img");
+        const seen = {};
+
+        // Primary: animego.me catalog renders cards as div.ani-list__item
+        let items = doc.select("div.ani-list__item");
+        for (const card of items) {
+            const titleA = card.selectFirst(".ani-list__item-title a") || card.selectFirst("a.ani-list__item-picture");
+            if (!titleA) continue;
+            const href = titleA.attr("href");
+            if (!href || seen[href]) continue;
+            seen[href] = true;
+            const name = (titleA.text || titleA.attr("title") || "").trim();
+            if (!name) continue;
+            const img = card.selectFirst("img");
             const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
-            const nameEl = it.selectFirst(".card-title, .h5, .animes-grid-item-body h1, .anime-title");
-            const name = (nameEl ? nameEl.text : (a.attr("title") || "")).trim();
             list.push({ name, imageUrl, link: href });
         }
-        return { list, hasNextPage: list.length >= 20 };
+
+        // Fallback: any anchor directly to /anime/{slug-id} — skip genre/type filters
+        if (list.length === 0) {
+            const anchors = doc.select("a[href*='/anime/']");
+            for (const a of anchors) {
+                const h = a.attr("href") || "";
+                if (!/^\/anime\/[^/]+-\d+\/?$/.test(h)) continue;
+                if (seen[h]) continue;
+                seen[h] = true;
+                const name = (a.attr("title") || a.text || "").trim();
+                if (!name || name.length < 2) continue;
+                const img = a.selectFirst("img") || (a.parent() ? a.parent().selectFirst("img") : null);
+                const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
+                list.push({ name, imageUrl, link: h });
+            }
+        }
+
+        const hasNextPage = list.length >= 20;
+        return { list, hasNextPage };
     }
 
     async getPopular(page) {

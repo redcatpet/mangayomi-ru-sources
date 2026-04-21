@@ -1,18 +1,18 @@
 const mangayomiSources = [{
     "name": "Animedia",
     "lang": "ru",
-    "baseUrl": "https://animedia.my",
+    "baseUrl": "https://amd.online",
     "apiUrl": "",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animedia.js",
-    "notes": "Ранее .tv — проверь актуальность домена. Видео через встроенный iframe плеер."
+    "notes": "animedia.tv/.my умерли, проект переехал на amd.online. Можно сменить baseUrl в настройках при блокировке."
 }];
 
 const AD_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -41,35 +41,43 @@ class DefaultExtension extends MProvider {
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        const items = doc.select(".ws-list .ws-tile, .catalog-item, div.card");
-        for (const it of items) {
-            const a = it.selectFirst("a[href*='/anime/'], a[href*='/serial/']") || it.selectFirst("a");
+        const seen = {};
+        // amd.online uses DLE template — cards are <div class="animefilm"> or <div class="grid-item">
+        // with inner anchor to /some-slug-123.html
+        const cards = doc.select("div.animefilm, div.grid-item, article, div.short");
+        for (const it of cards) {
+            const a = it.selectFirst("a[href]");
             if (!a) continue;
-            const href = a.attr("href");
+            const href = a.attr("href") || "";
+            // skip nav/filter links
+            if (!href || /\/(ongoingi|top|filter|ghanr|god|tip|page|forum|pm)/.test(href)) continue;
+            if (seen[href]) continue;
+            seen[href] = true;
             const img = it.selectFirst("img");
             const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
-            const name = (it.selectFirst(".ws-title, .card-title, .name, h3") || a).text.trim();
-            if (!href || !name) continue;
+            const nameEl = it.selectFirst(".grid-item__title, .animefilm__title, h2, h3") || a;
+            const name = (nameEl.text || a.attr("title") || "").trim();
+            if (!name || name.length < 2) continue;
             list.push({ name, imageUrl, link: href });
         }
-        const hasNextPage = !!doc.selectFirst("a.next, .page-link[rel=next]");
-        return { list, hasNextPage: hasNextPage || list.length >= 20 };
+        const hasNextPage = list.length >= 10;
+        return { list, hasNextPage };
     }
 
     async getPopular(page) {
-        const res = await this.client.get(`${this.source.baseUrl}/catalog/all?page=${page}`, this.headers);
+        const path = page === 1 ? "/ongoingi/" : `/ongoingi/page/${page}/`;
+        const res = await this.client.get(this.source.baseUrl + path, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
     async getLatestUpdates(page) {
-        const res = await this.client.get(`${this.source.baseUrl}/catalog/all?sort=new&page=${page}`, this.headers);
-        if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseCatalog(res.body);
+        return await this.getPopular(page);
     }
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.baseUrl}/ajax/search?keyword=${encodeURIComponent(query || "")}`,
-            this.headers
+        const res = await this.client.post(
+            `${this.source.baseUrl}/index.php?do=search`,
+            { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" },
+            { "do": "search", "subaction": "search", "story": query || "" }
         );
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);

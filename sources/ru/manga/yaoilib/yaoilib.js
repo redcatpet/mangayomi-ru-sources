@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/yaoilib.js",

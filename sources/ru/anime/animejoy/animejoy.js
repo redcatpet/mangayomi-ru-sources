@@ -41,21 +41,53 @@ class DefaultExtension extends MProvider {
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        const items = doc.select("article.block, .sect-items article, div.short");
+        const seen = {};
+
+        // Current AnimeJoy template: div.story_line > a[href title] with <i.image.cover style="background-image:url(...)">
+        let items = doc.select("div.story_line");
         for (const it of items) {
-            const a = it.selectFirst("h2.ntitle a, h3.short-title a, a.short-poster, a.short-img");
+            const a = it.selectFirst("a");
             if (!a) continue;
             const href = a.attr("href");
-            if (!href) continue;
-            const img = it.selectFirst("img");
-            const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
-            const nameEl = it.selectFirst("h2.ntitle, h3.short-title, .short-title") || a;
-            const name = nameEl.text.trim();
+            if (!href || seen[href]) continue;
+            seen[href] = true;
+            const name = ((a.attr("title") || "").split("[")[0] || a.text || "").trim();
             if (!name) continue;
+            // Image url in background-image style of <i class="image cover">
+            let imageUrl = "";
+            const img = it.selectFirst("i.image, i.cover, .image.cover");
+            if (img) {
+                const style = img.attr("style") || "";
+                const m = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+                if (m) imageUrl = this.absUrl(m[1]);
+            }
+            if (!imageUrl) {
+                const imgTag = it.selectFirst("img");
+                if (imgTag) imageUrl = this.absUrl(imgTag.attr("src") || imgTag.attr("data-src") || "");
+            }
             list.push({ name, imageUrl, link: href });
         }
-        const hasNextPage = !!doc.selectFirst(".pnext a, a[href*='/page/']:contains(»)");
-        return { list, hasNextPage: hasNextPage || list.length >= 15 };
+
+        // Fallback for older template
+        if (list.length === 0) {
+            const oldItems = doc.select("article.block, .sect-items article, div.short");
+            for (const it of oldItems) {
+                const a = it.selectFirst("h2.ntitle a, h3.short-title a, a.short-poster, a.short-img");
+                if (!a) continue;
+                const href = a.attr("href");
+                if (!href || seen[href]) continue;
+                seen[href] = true;
+                const img = it.selectFirst("img");
+                const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
+                const nameEl = it.selectFirst("h2.ntitle, h3.short-title, .short-title") || a;
+                const name = nameEl.text.trim();
+                if (!name) continue;
+                list.push({ name, imageUrl, link: href });
+            }
+        }
+
+        const hasNextPage = list.length >= 10;
+        return { list, hasNextPage };
     }
 
     async getPopular(page) {

@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animelib.js",
@@ -30,7 +30,7 @@ class DefaultExtension extends LibFamilyBase {
             const json = JSON.parse(res.body);
             const list = (json.data || []).map(m => ({
                 name: libCoerceString(m.rus_name || m.eng_name || m.name || ""),
-                imageUrl: libCoerceString((m.cover && (m.cover.default || m.cover.thumbnail)) || ""),
+                imageUrl: libProxyImage(libCoerceString((m.cover && (m.cover.thumbnail || m.cover.default)) || "")),
                 link: libCoerceString(m.slug_url || m.slug || "")
             }));
             const pag = (json.meta && (json.meta.pagination || json.meta)) || {};
@@ -69,7 +69,7 @@ class DefaultExtension extends LibFamilyBase {
 
         return {
             name: libCoerceString(info.rus_name || info.eng_name || info.name || slug),
-            imageUrl: libCoerceString((info.cover && (info.cover.default || info.cover.thumbnail)) || ""),
+            imageUrl: libProxyImage(libCoerceString((info.cover && (info.cover.default || info.cover.thumbnail)) || "")),
             author: (info.authors || []).map(x => libCoerceString(x && x.name)).filter(Boolean).join(", "),
             status: this.parseStatus(info.status && libCoerceString(info.status.label)),
             description: libCoerceString(info.summary || info.description || ""),

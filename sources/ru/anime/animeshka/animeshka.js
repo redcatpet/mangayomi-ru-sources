@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animeshka.js",
-    "notes": "Замена YummyAnime. Стандартный каталог + Kodik iframe."
+    "notes": "⚠ Источник WIP. animeshka.com часто недоступен — замените baseUrl в настройках на рабочее зеркало. При вечном spinner'е проверьте домен в браузере."
 }];
 
 const AS_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";

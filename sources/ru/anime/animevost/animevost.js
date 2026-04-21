@@ -89,9 +89,12 @@ class DefaultExtension extends MProvider {
             try { seriesMap = JSON.parse(seriesMap.replace(/'/g, '"')); } catch (e) { seriesMap = {}; }
         }
         seriesMap = seriesMap || {};
+        // API /playlist expects the TITLE id (not episode id) and returns all
+        // episodes as one array. We pack "titleId::episodeName" so getVideoList
+        // can resolve the right row.
         const episodes = Object.keys(seriesMap).map(name => ({
             name: name,
-            url: String(seriesMap[name]),
+            url: String(info.id) + "::" + name,
             dateUpload: Date.now().toString(),
             scanlator: "AnimeVost"
         }));
@@ -112,32 +115,42 @@ class DefaultExtension extends MProvider {
         };
     }
 
-    async getVideoList(epId) {
+    async getVideoList(packedUrl) {
+        // packedUrl format: "titleId::episodeName"
+        const sep = (packedUrl || "").indexOf("::");
+        if (sep < 0) return [];
+        const titleId = packedUrl.substring(0, sep);
+        const epName = packedUrl.substring(sep + 2);
+
         const res = await this.client.post(
             `${this.source.apiUrl}/playlist`,
             { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" },
-            { "id": epId }
+            { "id": titleId }
         );
         if (res.statusCode !== 200) return [];
-        const arr = JSON.parse(res.body);
+        let arr;
+        try { arr = JSON.parse(res.body); } catch (e) { return []; }
+        if (!Array.isArray(arr)) return [];
+
+        const target = arr.find(x => x && x.name === epName) || arr[0];
+        if (!target) return [];
+
         const videos = [];
-        for (const item of arr) {
-            if (item.hd) {
-                videos.push({
-                    url: item.hd,
-                    originalUrl: item.hd,
-                    quality: "AnimeVost 720p",
-                    headers: this.headers
-                });
-            }
-            if (item.std) {
-                videos.push({
-                    url: item.std,
-                    originalUrl: item.std,
-                    quality: "AnimeVost 480p",
-                    headers: this.headers
-                });
-            }
+        if (target.hd) {
+            videos.push({
+                url: target.hd,
+                originalUrl: target.hd,
+                quality: "AnimeVost 720p",
+                headers: this.headers
+            });
+        }
+        if (target.std) {
+            videos.push({
+                url: target.std,
+                originalUrl: target.std,
+                quality: "AnimeVost 480p",
+                headers: this.headers
+            });
         }
         return videos;
     }

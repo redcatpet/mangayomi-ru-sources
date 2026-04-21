@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/sovetromantica.js",
-    "notes": "Аниме с переводами команды Sovetromantica. HLS прямо на странице эпизода."
+    "notes": "⚠ WIP. Каталог загружается через JS, из нативного клиента показывает пусто. Используйте Webview-кнопку в приложении для просмотра."
 }];
 
 const SR_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
