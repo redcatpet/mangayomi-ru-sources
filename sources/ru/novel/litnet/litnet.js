@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/litnet.js",
@@ -112,11 +112,17 @@ class DefaultExtension extends MProvider {
         return { name, imageUrl, description, author, genre, status: 5, chapters: chapters.reverse() };
     }
 
-    async getPageList(url) {
+    async getHtmlContent(name, url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
+        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode} — возможно, нужен session cookie в настройках.</p>`;
         const doc = new Document(res.body);
         const content = doc.selectFirst("div.reader__body, div.chapter-content, article.reader");
-        return [content ? content.innerHtml : "(Возможно, глава платная или требуется логин. Вставьте session cookie в настройках.)"];
+        const html = content ? content.innerHtml : "<p>(Глава платная или требуется логин. Вставьте session cookie в настройках.)</p>";
+        return `<h2>${name || ""}</h2><hr><br>${html}`;
+    }
+
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 
     getFilterList() { return []; }

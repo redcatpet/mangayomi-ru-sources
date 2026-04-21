@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.2",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobelib.js",
@@ -21,23 +21,21 @@ class DefaultExtension extends LibFamilyBase {
     get siteId() { return 6; }
     get itemType() { return 2; }
 
-    // Chapters use `/manga/{slug}/chapter?number=X&volume=Y` and the response
-    // contains `content` (HTML) instead of `pages`. We return it as single page.
-    async getPageList(url) {
+    async getHtmlContent(name, url) {
         const res = await this.client.get(url, this.apiHeaders);
         if (res.statusCode !== 200) {
-            return ["(Ошибка загрузки главы — возможно требуется Bearer token в настройках)"];
+            return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode} — возможно требуется Bearer token в настройках.</p>`;
         }
         const data = JSON.parse(res.body).data || {};
         const raw = data.content || data.text || "";
-        // raw may be string OR ProseMirror doc — convert both to HTML
         let html;
-        if (typeof raw === "string") {
-            html = raw;
-        } else {
-            html = libProseMirrorToHtml(raw);
-        }
-        if (!html) return ["(Глава пустая)"];
-        return [html];
+        if (typeof raw === "string") html = raw;
+        else html = libProseMirrorToHtml(raw);
+        if (!html) return `<h2>${name || ""}</h2><p>(Глава пустая)</p>`;
+        return `<h2>${name || ""}</h2><hr><br>${html}`;
+    }
+
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 }

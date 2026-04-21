@@ -3,18 +3,18 @@
 const mangayomiSources = [{
     "name": "ReadManga",
     "lang": "ru",
-    "baseUrl": "https://web.usagi.one",
+    "baseUrl": "https://3.readmanga.ru",
     "apiUrl": "",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/readmanga.js",
-    "notes": "При блокировке домена замените baseUrl в настройках источника. Актуальные зеркала: web.usagi.one, readmanga.live, readmanga.io"
+    "notes": "Актуальный mirror: 3.readmanga.ru. Другие: web.usagi.one, readmanga.io, readmanga.live (редирект). При блокировке замените в настройках."
 }];
 
 class DefaultExtension extends GroupleBase {}

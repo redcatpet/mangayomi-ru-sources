@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/author_today.js",
@@ -143,20 +143,24 @@ class DefaultExtension extends MProvider {
         };
     }
 
-    async getPageList(url) {
-        // Text on author.today is AES-encrypted in JS (`atWCB` call). Without session
-        // cookie + key derivation the plaintext can't be obtained. We return a
-        // stub page instructing the user — honest MVP behaviour.
+    async getHtmlContent(name, url) {
         const sessionSet = !!(new SharedPreferences()).get("session_cookie");
         if (!sessionSet) {
-            return ["(Для чтения глав на Author.Today нужно вставить ваш session cookie в настройки источника — поле \"Session cookie\". Скопируйте из DevTools → Application → Cookies значение laravel_session после входа в аккаунт.)"];
+            return `<h2>${name || ""}</h2><hr><p>⚠ Текст глав author.today зашифрован клиентским JS.</p>
+                <p>Вставьте значение Cookie <code>laravel_session</code> в настройках источника (поле <b>Session cookie</b>).</p>
+                <p>Получить: зайдите на <a href="https://author.today">author.today</a>, логиньтесь, откройте DevTools → Application → Cookies → скопируйте значение laravel_session.</p>
+                <p>Без этого можно читать только бесплатные книги в браузере через Webview.</p>`;
         }
-        // Best-effort: fetch the reader page and extract meta — might still be encrypted.
         const res = await this.client.get(this.absUrl(url), this.headers);
+        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}</p>`;
         const doc = new Document(res.body);
         const content = doc.selectFirst("#text-container, div.reader-text, div.text-container");
-        const html = content ? content.innerHtml : "(Не удалось извлечь текст. Если это платная глава — нужна покупка на сайте.)";
-        return [html];
+        const html = content ? content.innerHtml : "<p>(Не удалось извлечь текст. Если это платная глава — нужна покупка на сайте.)</p>";
+        return `<h2>${name || ""}</h2><hr><br>${html}`;
+    }
+
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 
     getFilterList() { return []; }

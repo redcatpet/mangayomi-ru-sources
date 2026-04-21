@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -159,14 +159,21 @@ class DefaultExtension extends MProvider {
         return Date.now();
     }
 
-    // Return chapter HTML content as a single-element "page list"
-    // Mangayomi uses getPageList for novels too — each entry is a page of text (HTML).
-    async getPageList(url) {
+    async getHtmlContent(name, url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
+        if (res.statusCode !== 200) return `<h3>${name || ""}</h3><p>Ошибка загрузки главы (HTTP ${res.statusCode}). Возможно, глава платная — войдите в аккаунт на tl.rulate.ru в браузере.</p>`;
         const doc = new Document(res.body);
-        const body = doc.selectFirst("div.content-text, div.chapter-text, div#chapter-text, article");
-        const html = body ? body.innerHtml : "(Не удалось извлечь текст — возможно, глава платная)";
-        return [html];
+        const body = doc.selectFirst("div.content-text, div.chapter-text, div#chapter-text, article.content, div.reader-container");
+        const content = body ? body.innerHtml : "";
+        if (!content) return `<h3>${name || ""}</h3><p>(Не удалось извлечь текст — возможно, глава платная)</p>`;
+        return `<h2>${name || ""}</h2><hr><br>${content}`;
+    }
+
+    async cleanHtmlContent(html) { return html; }
+
+    // Fallback for older Mangayomi builds that still look at getPageList
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 
     getFilterList() { return []; }

@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -119,12 +119,17 @@ class DefaultExtension extends MProvider {
         };
     }
 
-    async getPageList(url) {
+    async getHtmlContent(name, url) {
         const res = await this.client.get(url, this.headers);
-        if (res.statusCode !== 200) return ["(Ошибка загрузки главы)"];
+        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}</p>`;
         const data = JSON.parse(res.body).data || {};
-        const html = data.content || data.text || "";
-        return [html || "(Глава пустая)"];
+        const raw = data.content || data.text || "";
+        if (!raw) return `<h2>${name || ""}</h2><p>(Глава пустая)</p>`;
+        return `<h2>${name || ""}</h2><hr><br>${raw}`;
+    }
+
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 
     getFilterList() { return []; }

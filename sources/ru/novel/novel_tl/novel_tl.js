@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/novel_tl.js",
@@ -102,11 +102,17 @@ class DefaultExtension extends MProvider {
         return { name, imageUrl, description, genre, status: 5, chapters: chapters.reverse() };
     }
 
-    async getPageList(url) {
+    async getHtmlContent(name, url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
+        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}</p>`;
         const doc = new Document(res.body);
         const content = doc.selectFirst(".chapter-content, .text-chapter, article.chapter, div#reader-content");
-        return [content ? content.innerHtml : "(Не удалось извлечь текст)"];
+        const html = content ? content.innerHtml : "<p>(Не удалось извлечь текст)</p>";
+        return `<h2>${name || ""}</h2><hr><br>${html}`;
+    }
+
+    async getPageList(url) {
+        return [await this.getHtmlContent("", url)];
     }
 
     getFilterList() { return []; }

@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/mangabuff.js",
-    "notes": "Страницы главы получаются инлайном из <script> — используется regex-парсинг."
+    "notes": "Верифицировано через Aidoku extension (Skittyblock/aidoku-community-sources)."
 }];
 
 const MB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -26,6 +26,7 @@ class DefaultExtension extends MProvider {
     get headers() {
         return {
             "User-Agent": MB_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
             "Referer": this.source.baseUrl + "/"
         };
@@ -38,35 +39,58 @@ class DefaultExtension extends MProvider {
         return this.source.baseUrl + (u.startsWith("/") ? u : "/" + u);
     }
 
+    extractStyleBg(style) {
+        if (!style) return "";
+        const m = style.match(/background-image:\s*url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+        return m ? m[1] : "";
+    }
+
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
-        const cards = doc.select("div.cards__item");
         const list = [];
-        for (const c of cards) {
-            const a = c.selectFirst("a.cards__name, a.cards__title, h3 a");
-            const imgA = c.selectFirst("a.cards__img");
-            if (!a) continue;
-            const link = a.attr("href");
-            const name = a.text.trim();
+        const seen = {};
+        // Grids use div.cards containing a.cards__item; skip "cloned" duplicates
+        const cards = doc.select("div.cards a.cards__item");
+        for (const card of cards) {
+            const cls = card.attr("class") || "";
+            if (cls.indexOf("cloned") >= 0) continue;
+            const href = card.attr("href");
+            if (!href || seen[href]) continue;
+            seen[href] = true;
+            const imgDiv = card.selectFirst("div.cards__img");
             let imageUrl = "";
-            const img = c.selectFirst("img");
-            if (img) imageUrl = this.absUrl(img.attr("data-src") || img.attr("src") || "");
-            list.push({ name, imageUrl, link });
+            if (imgDiv) {
+                imageUrl = this.absUrl(this.extractStyleBg(imgDiv.attr("style") || ""));
+            }
+            if (!imageUrl) {
+                const img = card.selectFirst("img");
+                if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+            }
+            const nameEl = card.selectFirst("div.cards__name");
+            const name = nameEl ? nameEl.text.trim() : (card.attr("title") || "").trim();
+            if (!name) continue;
+            list.push({ name, imageUrl, link: href });
         }
-        const hasNextPage = !!doc.selectFirst("a.pagination__next, li.page-item:not(.disabled) a[aria-label*=Next]");
-        return { list, hasNextPage: hasNextPage || list.length >= 24 };
+        const hasNextPage = list.length >= 10;
+        return { list, hasNextPage };
     }
 
     async getPopular(page) {
-        const res = await this.client.get(`${this.source.baseUrl}/manga?sort=rating&page=${page}`, this.headers);
+        // Homepage covers most popular when no filter
+        const url = page === 1
+            ? this.source.baseUrl + "/"
+            : `${this.source.baseUrl}/manga?sort=rating&page=${page}`;
+        const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
+
     async getLatestUpdates(page) {
         const res = await this.client.get(`${this.source.baseUrl}/manga?sort=last_updated&page=${page}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
+
     async search(query, page, filters) {
         const res = await this.client.get(
             `${this.source.baseUrl}/search?query=${encodeURIComponent(query || "")}&page=${page}`,
@@ -76,64 +100,94 @@ class DefaultExtension extends MProvider {
         return this.parseCatalog(res.body);
     }
 
+    statusFromText(text) {
+        if (!text) return 5;
+        const t = text.trim();
+        if (t === "Онгоинг") return 0;
+        if (t === "Завершен" || t === "Завершён") return 1;
+        if (t === "Заморожен" || t === "Приостановлен") return 2;
+        if (t === "Брошено") return 3;
+        return 5;
+    }
+
     async getDetail(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
 
-        const name = (doc.selectFirst("h1.manga__name") || doc.selectFirst("h1")).text.trim();
-        const coverEl = doc.selectFirst("div.manga__img img, .manga-card__cover img");
-        const imageUrl = coverEl ? this.absUrl(coverEl.attr("src") || coverEl.attr("data-src") || "") : "";
-        const descEl = doc.selectFirst("div.manga__description, div.manga-info__description");
+        // Title + cover from og:* meta tags (reliable fallback)
+        const ogImg = doc.selectFirst("meta[property=og:image]");
+        const cover = ogImg ? this.absUrl(ogImg.attr("content") || "") : "";
+        const ogTitle = doc.selectFirst("meta[property=og:title]");
+
+        const nameEl = doc.selectFirst("h1.manga__name");
+        const name = (nameEl ? nameEl.text : (ogTitle ? ogTitle.attr("content") : "") || "").trim();
+
+        const descEl = doc.selectFirst("div.tabs__content div.tabs__page[data-page=info] div.manga__description")
+                    || doc.selectFirst("div.manga__description");
         const description = descEl ? descEl.text.trim() : "";
 
-        const genre = doc.select("a.manga__genre, a.tags__item").map(e => e.text.trim());
-        const author = doc.select("a[href*='/author/'], .manga__author a").map(e => e.text.trim()).join(", ");
+        const tagsEl = doc.selectFirst("div.tags");
+        const genre = tagsEl
+            ? tagsEl.select("a").map(e => e.text.trim()).filter(x => x)
+            : doc.select("a.tags__item").map(e => e.text.trim());
+
+        // Status from info row — try several locations
+        let statusText = "";
+        const statusRow = doc.selectFirst("div.info-list__row:contains(Статус) div.info-list__value, span.manga__status");
+        if (statusRow) statusText = statusRow.text;
+        const status = this.statusFromText(statusText);
 
         const chapters = [];
-        const rows = doc.select("a.chapters__item, li.chapters__item a, .chapter-list a");
-        for (const r of rows) {
-            const href = r.attr("href");
+        const chapterEls = doc.select(
+            "div.tabs__content div.tabs__page[data-page=chapters] div.chapters div.chapters__list a.chapters__item"
+        );
+        let fallback = [];
+        if (chapterEls.length === 0) {
+            fallback = doc.select("a.chapters__item, div.chapters a[href*='/manga/']");
+        }
+        const chapEls = chapterEls.length ? chapterEls : fallback;
+        for (let i = 0; i < chapEls.length; i++) {
+            const ch = chapEls[i];
+            const href = ch.attr("href");
             if (!href) continue;
-            const chName = (r.selectFirst(".chapters__name, .chapter__name") || r).text.trim();
+            const nameText = (ch.selectFirst("div.chapters__name") || { text: "" }).text.trim()
+                          || (ch.selectFirst("div.chapters__value span") || { text: "" }).text.trim()
+                          || `Глава ${i + 1}`;
+            const dateRaw = ch.attr("data-chapter-date") || "";
+            let dateMs = Date.now();
+            const dm = dateRaw.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+            if (dm) {
+                let y = parseInt(dm[3]);
+                if (y < 100) y += 2000;
+                dateMs = new Date(y, parseInt(dm[2]) - 1, parseInt(dm[1])).getTime();
+            }
             chapters.push({
-                name: chName,
-                url: href,
-                dateUpload: Date.now().toString(),
+                name: nameText,
+                // ?style=list preloads all images for the reader
+                url: href + (href.indexOf("?") >= 0 ? "&" : "?") + "style=list",
+                dateUpload: String(dateMs),
                 scanlator: null
             });
         }
 
-        return { name, imageUrl, description, author, genre, status: 5, chapters };
+        return { name, imageUrl: cover, description, genre, status, chapters };
     }
 
     async getPageList(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
-        const body = res.body;
-        // Pages live inside an inline <script> — look for `pages = [ ... ]` or `window.__pages = ...`
-        const patterns = [
-            /pages\s*=\s*(\[[\s\S]*?\])/,
-            /"pages"\s*:\s*(\[[\s\S]*?\])/,
-            /chapter\.pages\s*=\s*(\[[\s\S]*?\])/
-        ];
-        for (const re of patterns) {
-            const m = body.match(re);
-            if (!m) continue;
-            try {
-                const arr = JSON.parse(m[1]);
-                // Entries can be strings or objects {url, image, p}
-                return arr.map(x => ({
-                    url: typeof x === "string" ? x : (x.url || x.image || x.src || x.p || ""),
-                    headers: this.headers
-                })).filter(p => p.url);
-            } catch (e) { /* next pattern */ }
+        const doc = new Document(res.body);
+        const pagesMap = {};
+        const items = doc.select("div.reader__pages div.reader__item, div.reader__item");
+        for (const item of items) {
+            const pageNum = parseInt(item.attr("data-page") || "0");
+            const img = item.selectFirst("img");
+            if (!img) continue;
+            const src = (img.attr("src") || img.attr("data-src") || "").trim();
+            if (!src) continue;
+            pagesMap[pageNum] = this.absUrl(src);
         }
-        // Fallback: search for direct <img data-src="..."> inside reader
-        const doc = new Document(body);
-        const imgs = doc.select("div.reader__item img, img.reader-image, img[data-src*='manga']");
-        return imgs.map(i => ({
-            url: this.absUrl(i.attr("data-src") || i.attr("src") || ""),
-            headers: this.headers
-        })).filter(p => p.url);
+        const keys = Object.keys(pagesMap).map(n => parseInt(n)).sort((a, b) => a - b);
+        return keys.map(k => ({ url: pagesMap[k], headers: this.headers }));
     }
 
     getFilterList() { return []; }
