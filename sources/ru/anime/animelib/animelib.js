@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animelib.js",
@@ -29,9 +29,9 @@ class DefaultExtension extends LibFamilyBase {
             if (res.statusCode !== 200) return { list: [], hasNextPage: false };
             const json = JSON.parse(res.body);
             const list = (json.data || []).map(m => ({
-                name: m.rus_name || m.eng_name || m.name || "",
-                imageUrl: (m.cover && (m.cover.default || m.cover.thumbnail)) || "",
-                link: m.slug_url || m.slug || ""
+                name: libCoerceString(m.rus_name || m.eng_name || m.name || ""),
+                imageUrl: libCoerceString((m.cover && (m.cover.default || m.cover.thumbnail)) || ""),
+                link: libCoerceString(m.slug_url || m.slug || "")
             }));
             const pag = (json.meta && (json.meta.pagination || json.meta)) || {};
             const current = pag.current_page || 1;
@@ -68,14 +68,14 @@ class DefaultExtension extends LibFamilyBase {
         const episodes = epRes.statusCode === 200 ? JSON.parse(epRes.body).data : [];
 
         return {
-            name: info.rus_name || info.eng_name || info.name || slug,
-            imageUrl: (info.cover && (info.cover.default || info.cover.thumbnail)) || "",
-            author: (info.authors || []).map(x => x.name).join(", "),
-            status: this.parseStatus(info.status && info.status.label),
-            description: info.summary || "",
-            genre: (info.genres || []).map(x => x.name),
+            name: libCoerceString(info.rus_name || info.eng_name || info.name || slug),
+            imageUrl: libCoerceString((info.cover && (info.cover.default || info.cover.thumbnail)) || ""),
+            author: (info.authors || []).map(x => libCoerceString(x && x.name)).filter(Boolean).join(", "),
+            status: this.parseStatus(info.status && libCoerceString(info.status.label)),
+            description: libCoerceString(info.summary || info.description || ""),
+            genre: (info.genres || []).map(x => libCoerceString(x && x.name)).filter(Boolean),
             episodes: episodes.map(ep => ({
-                name: `Сезон ${ep.season || 1} · Эпизод ${ep.number || "?"}` + (ep.name ? `: ${ep.name}` : ""),
+                name: `Сезон ${ep.season || 1} · Эпизод ${ep.number || "?"}` + (ep.name ? `: ${libCoerceString(ep.name)}` : ""),
                 url: `${this.apiUrl}/episodes/${ep.id}`,
                 dateUpload: ep.created_at ? new Date(ep.created_at).valueOf().toString() : Date.now().toString(),
                 scanlator: null

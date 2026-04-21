@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobelib.js",
@@ -29,10 +29,15 @@ class DefaultExtension extends LibFamilyBase {
             return ["(Ошибка загрузки главы — возможно требуется Bearer token в настройках)"];
         }
         const data = JSON.parse(res.body).data || {};
-        const content = data.content || data.text || "";
-        if (!content) {
-            return ["(Глава пустая или контент в неожиданном формате)"];
+        const raw = data.content || data.text || "";
+        // raw may be string OR ProseMirror doc — convert both to HTML
+        let html;
+        if (typeof raw === "string") {
+            html = raw;
+        } else {
+            html = libProseMirrorToHtml(raw);
         }
-        return [content];
+        if (!html) return ["(Глава пустая)"];
+        return [html];
     }
 }
