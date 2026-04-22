@@ -8,14 +8,15 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/acomics.js",
-    "notes": "Русские веб-комиксы. Каталог /list, отдельный комикс /~{slug}, страница /~{slug}/{num}"
+    "notes": "Русские веб-комиксы. Каталог /comics?skip=N, детали /~slug, выпуск /~slug/N."
 }];
 
 const AC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const AC_PAGE_SIZE = 10;
 
 class DefaultExtension extends MProvider {
     constructor() {
@@ -41,82 +42,111 @@ class DefaultExtension extends MProvider {
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        const items = doc.select("table.catalog-elem-small, table.catalog-elem, div.list-content div.serial");
-        for (const it of items) {
-            const a = it.selectFirst("a[href*='/~']");
+        const cards = doc.select("section.serial-card");
+        for (const card of cards) {
+            const a = card.selectFirst("a.cover") || card.selectFirst("h2.title a");
             if (!a) continue;
             const href = a.attr("href");
-            const img = it.selectFirst("img");
-            let imageUrl = img ? this.absUrl(img.attr("src") || "") : "";
-            const titleEl = it.selectFirst("strong, .serial-title, h2 a") || a;
-            const name = titleEl.text.trim() || a.attr("title") || "";
+            if (!href || href.indexOf("/~") < 0) continue;
+            // Skip external-redirect cards
+            if (href.startsWith("http") && href.indexOf("acomics.ru") < 0) continue;
+            const img = card.selectFirst("img");
+            let imageUrl = "";
+            if (img) {
+                imageUrl = img.attr("data-real-src") || img.attr("src") || "";
+                if (imageUrl && imageUrl.indexOf("catalog-stub") >= 0) imageUrl = "";
+                imageUrl = this.absUrl(imageUrl);
+            }
+            const titleEl = card.selectFirst("h2.title a");
+            const name = titleEl ? titleEl.text.trim() : (a.attr("title") || "").trim();
             if (!name) continue;
             list.push({ name, imageUrl, link: href });
         }
-        const hasNextPage = !!doc.selectFirst("a.next, .pagination .next");
-        return { list, hasNextPage: hasNextPage || list.length >= 10 };
+        return { list, hasNextPage: list.length >= AC_PAGE_SIZE };
     }
 
     async getPopular(page) {
-        const skip = (page - 1) * 10;
-        const res = await this.client.get(`${this.source.baseUrl}/list/subscr/${skip}`, this.headers);
+        const skip = (page - 1) * AC_PAGE_SIZE;
+        const res = await this.client.get(`${this.source.baseUrl}/comics?skip=${skip}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
+
     async getLatestUpdates(page) {
-        const skip = (page - 1) * 10;
-        const res = await this.client.get(`${this.source.baseUrl}/list/last_update/${skip}`, this.headers);
+        const skip = (page - 1) * AC_PAGE_SIZE;
+        const res = await this.client.get(`${this.source.baseUrl}/comics?categories=&ratings[]=1&ratings[]=2&ratings[]=3&ratings[]=4&ratings[]=5&ratings[]=6&type=0&updatable=0&subscribe=0&issue_count=2&sort=last_update&skip=${skip}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
+
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.baseUrl}/search?keyword=${encodeURIComponent(query || "")}`,
-            this.headers
-        );
+        const q = encodeURIComponent(query || "");
+        const res = await this.client.get(`${this.source.baseUrl}/search?keyword=${q}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
 
     async getDetail(url) {
-        const res = await this.client.get(this.absUrl(url), this.headers);
+        const path = url.startsWith("http") ? url.replace(this.source.baseUrl, "") : url;
+        const slugMatch = path.match(/~([^/?]+)/);
+        const slug = slugMatch ? slugMatch[1] : path.replace(/^\/+/, "").replace(/^~/, "");
+        const res = await this.client.get(`${this.source.baseUrl}/~${slug}`, this.headers);
         const doc = new Document(res.body);
 
-        const name = (doc.selectFirst("h1") || doc.selectFirst(".about-header h2")).text.trim();
-        const imgEl = doc.selectFirst("img.serial-thumb, img.avatar-serial, .about-header img");
-        const imageUrl = imgEl ? this.absUrl(imgEl.attr("src") || "") : "";
-        const descEl = doc.selectFirst("section.serial-description, div.about-text");
+        const nameEl = doc.selectFirst("h1.serial-header-title") || doc.selectFirst("h1") || doc.selectFirst(".about-header h2");
+        const name = nameEl ? nameEl.text.trim() : slug;
+        const imgEl = doc.selectFirst("img.serial-cover") || doc.selectFirst(".about-header img") || doc.selectFirst("div.serial-header img");
+        let imageUrl = "";
+        if (imgEl) {
+            imageUrl = imgEl.attr("data-real-src") || imgEl.attr("src") || "";
+            imageUrl = this.absUrl(imageUrl);
+        }
+        const descEl = doc.selectFirst("section.serial-description") || doc.selectFirst("div.about-text") || doc.selectFirst("p.serial-about");
         const description = descEl ? descEl.text.trim() : "";
-        const author = (doc.selectFirst("a.serial-author, td:contains(Автор) + td") || { text: "" }).text.trim();
-        const genre = doc.select("a.button.tag, .serial-info a[href*='/genres/']").map(e => e.text.trim()).filter(x => x);
+        const genre = doc.select("a.tag, a[href*='/serial-category/']").map(e => e.text.trim()).filter(x => x);
 
-        // Chapters — on acomics each "page" is a chapter, so read the issues list /~slug/list
-        let slug = url;
-        const slugMatch = url.match(/~([^/?]+)/);
-        if (slugMatch) slug = slugMatch[1];
-
-        const listRes = await this.client.get(`${this.source.baseUrl}/~${slug}/list`, this.headers);
+        // Chapters — use sequential issue URLs from /~slug/list
         const chapters = [];
+        const listRes = await this.client.get(`${this.source.baseUrl}/~${slug}/list`, this.headers);
         if (listRes.statusCode === 200) {
             const listDoc = new Document(listRes.body);
-            const rows = listDoc.select("td.list-title a, .list-column a");
-            for (const r of rows) {
-                const href = r.attr("href");
-                if (!href || href.indexOf(`/~${slug}/`) < 0) continue;
-                const chName = r.text.trim();
-                chapters.push({ name: chName, url: href, dateUpload: Date.now().toString(), scanlator: null });
+            const rows = listDoc.select(`a[href^='/~${slug}/']`);
+            const seen = {};
+            for (const a of rows) {
+                const href = a.attr("href") || "";
+                const num = href.replace(`/~${slug}/`, "").split(/[?#/]/)[0];
+                if (!/^\d+$/.test(num)) continue;
+                if (seen[num]) continue;
+                seen[num] = true;
+                const txt = (a.text || "").trim() || `Выпуск ${num}`;
+                chapters.push({
+                    name: txt,
+                    url: `/~${slug}/${num}`,
+                    dateUpload: Date.now().toString(),
+                    scanlator: null
+                });
             }
+            chapters.sort((a, b) => {
+                const an = parseInt(a.url.split("/").pop()) || 0;
+                const bn = parseInt(b.url.split("/").pop()) || 0;
+                return bn - an;
+            });
         }
 
-        return { name, imageUrl, description, author, genre, status: 5, chapters: chapters.reverse() };
+        return { name, imageUrl, description, genre, status: 5, chapters };
     }
 
     async getPageList(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
-        const img = doc.selectFirst("img#mainImage, img.issue-image, div.issue img");
+        const img = doc.selectFirst("img#mainImage")
+                 || doc.selectFirst("img.issue-image")
+                 || doc.selectFirst("div.issue img")
+                 || doc.selectFirst("section.issue img");
         if (!img) return [];
-        return [{ url: this.absUrl(img.attr("src") || ""), headers: this.headers }];
+        const src = img.attr("src") || img.attr("data-real-src") || "";
+        if (!src) return [];
+        return [{ url: this.absUrl(src), headers: this.headers }];
     }
 
     getFilterList() { return []; }

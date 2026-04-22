@@ -2,20 +2,21 @@ const mangayomiSources = [{
     "name": "Ранобэ.рф",
     "lang": "ru",
     "baseUrl": "https://xn--80ac9aeh6f.xn--p1ai",
-    "apiUrl": "https://xn--80ac9aeh6f.xn--p1ai/api/v2",
+    "apiUrl": "https://xn--80ac9aeh6f.xn--p1ai/v3",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranoberf.js",
-    "notes": "Ранобэ.рф — публичный API v2. Punycode domain. Главы отдаются как HTML-контент."
+    "notes": "Ранобэ.рф — публичный v3 API для каталога + Next.js data для детали. Punycode domain. Главы отдаются как HTML-контент."
 }];
 
-const RF_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const RRF_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const RRF_PAGE_SIZE = 30;
 
 class DefaultExtension extends MProvider {
     constructor() {
@@ -25,94 +26,122 @@ class DefaultExtension extends MProvider {
 
     get headers() {
         return {
-            "User-Agent": RF_UA,
-            "Accept": "application/json",
+            "User-Agent": RRF_UA,
+            "Accept": "application/json, text/html,*/*",
+            "Accept-Language": "ru-RU,ru;q=0.9",
             "Referer": this.source.baseUrl + "/"
         };
     }
 
-    parseList(body) {
-        const j = JSON.parse(body);
-        const items = (j.items || j.data || j.books || []);
-        const list = items.map(b => ({
-            name: b.title || b.name || "",
-            imageUrl: (b.image && (b.image.url || b.image)) || b.cover || "",
-            link: b.url || b.slug || String(b.id)
+    imgUrl(img) {
+        if (!img || !img.url) return "";
+        return this.source.baseUrl + img.url;
+    }
+
+    mapItems(items) {
+        return (items || []).map(it => ({
+            name: it.title || it.titleEn || String(it.id),
+            imageUrl: this.imgUrl(it.verticalImage || it.horizontalImage),
+            link: it.url || ("/" + (it.slug || ""))
         }));
-        const hasNextPage = (j.total || 0) > (j.currentPage || 1) * (j.perPage || 20) || list.length >= 20;
-        return { list: list, hasNextPage: hasNextPage };
     }
 
-    async getPopular(page) {
-        const res = await this.client.get(
-            `${this.source.apiUrl}/books?page=${page}&sort=popular`,
-            this.headers
-        );
+    async fetchList(order, page) {
+        const url = `${this.source.apiUrl}/books?page=${page}&pageSize=${RRF_PAGE_SIZE}&expand=verticalImage,horizontalImage,lastChapter&order=${order}`;
+        const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseList(res.body);
+        const json = JSON.parse(res.body);
+        const list = this.mapItems(json.items);
+        const pd = json.pagesData || {};
+        const hasNext = (pd.currentPage || page) < (pd.pageCount || 0);
+        return { list, hasNextPage: hasNext };
     }
-    async getLatestUpdates(page) {
-        const res = await this.client.get(
-            `${this.source.apiUrl}/books?page=${page}&sort=newChapters`,
-            this.headers
-        );
-        if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseList(res.body);
-    }
+
+    async getPopular(page) { return await this.fetchList("likes", page); }
+    async getLatestUpdates(page) { return await this.fetchList("lastPublishedChapter", page); }
+
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.apiUrl}/books?page=${page}&query=${encodeURIComponent(query || "")}`,
-            this.headers
-        );
+        const q = encodeURIComponent(query || "");
+        const res = await this.client.get(`${this.source.baseUrl}/books?q=${q}&page=${page}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseList(res.body);
+        const data = this.extractNextData(res.body);
+        const td = ((data && data.props && data.props.pageProps) || {}).totalData || {};
+        const list = this.mapItems(td.items);
+        const pd = td.pagesData || {};
+        const hasNext = (pd.currentPage || page) < (pd.pageCount || 0);
+        return { list, hasNextPage: hasNext };
     }
 
-    async getDetail(slug) {
-        const bookRes = await this.client.get(`${this.source.apiUrl}/books/${slug}`, this.headers);
-        if (bookRes.statusCode !== 200) {
-            return { name: slug, imageUrl: "", description: "(Ошибка)", status: 5, genre: [], chapters: [] };
-        }
-        const b = JSON.parse(bookRes.body).book || JSON.parse(bookRes.body);
+    extractNextData(html) {
+        const marker = '<script id="__NEXT_DATA__" type="application/json">';
+        const start = html.indexOf(marker);
+        if (start < 0) return null;
+        const body = html.substring(start + marker.length);
+        const end = body.indexOf("</script>");
+        if (end < 0) return null;
+        try { return JSON.parse(body.substring(0, end)); } catch (e) { return null; }
+    }
 
-        const chRes = await this.client.get(`${this.source.apiUrl}/books/${slug}/chapters`, this.headers);
-        const chapters = [];
-        if (chRes.statusCode === 200) {
-            const j = JSON.parse(chRes.body);
-            const items = j.items || j.chapters || j;
-            for (const c of (items || [])) {
-                chapters.push({
-                    name: c.title || c.name || ("Глава " + (c.number || "?")),
-                    url: `${this.source.apiUrl}/books/${slug}/chapters/${c.url || c.slug || c.id}`,
-                    dateUpload: c.publishDate ? new Date(c.publishDate).valueOf().toString() : Date.now().toString(),
-                    scanlator: null
-                });
-            }
-        }
+    parseStatus(s) {
+        if (s === "active" || s === "ongoing" || s === "ongiong") return 0;
+        if (s === "completed" || s === "finished") return 1;
+        if (s === "freezed" || s === "frozen" || s === "hiatus") return 2;
+        return 5;
+    }
+
+    async getDetail(url) {
+        const path = url.startsWith("/") ? url : ("/" + url);
+        const res = await this.client.get(this.source.baseUrl + path, this.headers);
+        const data = this.extractNextData(res.body || "");
+        const pp = (data && data.props && data.props.pageProps) || {};
+        const book = pp.book || {};
+        const chapters = (book.chapters || []).map(c => ({
+            name: (c.numberChapter ? c.numberChapter + ". " : "") + (c.title || ""),
+            url: c.url || "",
+            dateUpload: c.publishedAt ? new Date(c.publishedAt.replace(" ", "T") + "Z").valueOf().toString() : Date.now().toString(),
+            scanlator: null
+        }));
 
         return {
-            name: b.title || slug,
-            imageUrl: (b.image && (b.image.url || b.image)) || b.cover || "",
-            description: b.description || b.annotation || "",
-            author: b.author ? (typeof b.author === "string" ? b.author : b.author.name) : "",
-            genre: (b.genres || []).map(g => g.title || g.name || g),
-            status: b.status === "complete" ? 1 : 0,
-            chapters: chapters.reverse()
+            name: book.title || book.titleEn || path,
+            imageUrl: this.imgUrl(book.imageVertical || book.verticalImage || book.imageHorizontal || book.horizontalImage),
+            description: (book.description || "").replace(/<[^>]+>/g, "").trim(),
+            author: book.author || "",
+            genre: (book.genres || []).map(g => g.title || g.name || "").filter(Boolean),
+            status: this.parseStatus(book.status),
+            chapters
         };
     }
 
     async getHtmlContent(name, url) {
-        const res = await this.client.get(url, this.headers);
-        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}</p>`;
-        const data = JSON.parse(res.body);
-        const chapter = data.chapter || data;
-        const content = chapter.content || chapter.text || "";
-        if (!content) return `<h2>${name || ""}</h2><p>(Глава пустая)</p>`;
-        return `<h2>${name || ""}</h2><hr><br>${content}`;
+        const path = url.startsWith("/") ? url : ("/" + url);
+        const res = await this.client.get(this.source.baseUrl + path, this.headers);
+        if (res.statusCode !== 200) {
+            return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}.</p>`;
+        }
+        const data = this.extractNextData(res.body || "");
+        const pp = (data && data.props && data.props.pageProps) || {};
+        const chap = pp.chapter || {};
+        const content = chap.content || {};
+        let text = content.text || "";
+        if (!text && chap.isSubscription) {
+            return `<h2>${name || chap.title || ""}</h2><p>(Эта глава только для подписчиков. Пополните баланс на сайте.)</p>`;
+        }
+        if (!text && (chap.isDonate || (chap.price && chap.price > 0))) {
+            return `<h2>${name || chap.title || ""}</h2><p>(Эта глава платная — ${chap.price || "?"} баллов.)</p>`;
+        }
+        if (!text) {
+            return `<h2>${name || chap.title || ""}</h2><p>(Глава пустая.)</p>`;
+        }
+        return `<h2>${name || chap.title || ""}</h2><hr>${text}`;
     }
 
     async getPageList(url) {
         return [await this.getHtmlContent("", url)];
+    }
+
+    async cleanHtmlContent(html) {
+        return (html || "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "");
     }
 
     getFilterList() { return []; }

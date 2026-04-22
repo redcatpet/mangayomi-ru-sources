@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/author_today.js",
@@ -45,80 +45,69 @@ class DefaultExtension extends MProvider {
 
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
-        let cards = doc.select("div.book-row");
-        if (cards.length === 0) cards = doc.select("div.book-item");
-        if (cards.length === 0) cards = doc.select("article.book");
+        const cards = doc.select("div.book-row");
         const list = [];
         for (const c of cards) {
-            const a = c.selectFirst("a.book-title-link, a.book-title, h4 a, a[href^='/work/']");
-            if (!a) continue;
-            const link = a.attr("href");
+            const linkEl = c.selectFirst("div.book-title a, a.book-cover-content") || c.selectFirst("a[href*='/work/']");
+            if (!linkEl) continue;
+            const link = linkEl.attr("href");
             if (!link) continue;
-            const name = a.text.trim() || (a.attr("title") || "").trim();
+            const titleEl = c.selectFirst("div.book-title a") || linkEl;
+            const name = (titleEl.text || titleEl.attr("title") || "").trim();
             if (!name) continue;
-            const img = c.selectFirst(".book-cover img, img");
+            const img = c.selectFirst("div.cover-image img") || c.selectFirst("img");
             let imageUrl = "";
             if (img) {
-                imageUrl = img.attr("data-src") || img.attr("src") || "";
+                imageUrl = img.attr("src") || img.attr("data-src") || "";
                 imageUrl = this.absUrl(imageUrl);
             }
-            list.push({ name: name, imageUrl: imageUrl, link: link });
+            list.push({ name, imageUrl, link });
         }
-        const hasNextPage = !!doc.selectFirst("a[rel=next], li.next a, a.page-link[aria-label*='следу']");
-        return { list: list, hasNextPage: hasNextPage };
+        const hasNextPage = list.length >= 20 || !!doc.selectFirst("a[rel=next], li.next a, a.page-link[aria-label*='следу']");
+        return { list, hasNextPage };
     }
 
-    async getPopular(page) {
-        const res = await this.client.get(
-            `${this.source.baseUrl}/catalog/all/popular?page=${page}`,
-            this.headers
-        );
+    async fetchCatalog(page, extraParams) {
+        const url = `${this.source.baseUrl}/search?category=works&page=${page}${extraParams || ""}`;
+        const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
 
-    async getLatestUpdates(page) {
-        const res = await this.client.get(
-            `${this.source.baseUrl}/catalog/all/fresh?page=${page}`,
-            this.headers
-        );
-        if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseCatalog(res.body);
-    }
+    async getPopular(page) { return await this.fetchCatalog(page, "&filter=top"); }
+    async getLatestUpdates(page) { return await this.fetchCatalog(page, "&sort=recent"); }
 
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.baseUrl}/search?category=works&q=${encodeURIComponent(query || "")}&page=${page}`,
-            this.headers
-        );
-        if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseCatalog(res.body);
+        return await this.fetchCatalog(page, `&q=${encodeURIComponent(query || "")}`);
     }
 
     async getDetail(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
 
-        const name = (doc.selectFirst("h1.book-title") || doc.selectFirst("h1")).text.trim();
+        const nameEl = doc.selectFirst("h1.book-title") || doc.selectFirst("h1");
+        const name = nameEl ? nameEl.text.trim() : url;
         let imageUrl = "";
-        const coverEl = doc.selectFirst("div.book-cover-content img, .book-cover img");
+        const coverEl = doc.selectFirst("div.book-cover-content img") || doc.selectFirst("div.book-cover img");
         if (coverEl) imageUrl = this.absUrl(coverEl.attr("src") || coverEl.attr("data-src") || "");
 
-        const description = (doc.selectFirst("div.rich-content, div.annotation") || doc.selectFirst("div[itemprop=description]"));
-        const descriptionText = description ? description.text.trim() : "";
+        const descEl = doc.selectFirst("div.rich-content")
+                    || doc.selectFirst("div.annotation")
+                    || doc.selectFirst("div[itemprop=description]");
+        const descriptionText = descEl ? descEl.text.trim() : "";
 
         const author = doc.select("div.book-authors a, span.book-author a").map(e => e.text.trim()).filter(x => x).join(", ");
-        const genre = doc.select("div.book-genres a, .book-tags a").map(e => e.text.trim()).filter(x => x);
+        const genre = doc.select("div.book-genres a, .book-tags a, a[href*='/work/genre/']").map(e => e.text.trim()).filter(x => x);
 
-        const statusText = (doc.selectFirst("div.book-status, span.book-status") || doc.selectFirst("div.book-meta")).text.trim();
+        const statusEl = doc.selectFirst("div.book-status") || doc.selectFirst("span.book-status");
+        const statusText = statusEl ? statusEl.text : "";
         let status = 5;
-        if (statusText.includes("полностью") || statusText.includes("Завершено") || statusText.includes("Закончен")) status = 1;
-        else if (statusText.includes("процесс") || statusText.includes("Пишется")) status = 0;
-        else if (statusText.includes("заморож")) status = 2;
+        if (statusText.indexOf("полностью") >= 0 || statusText.indexOf("Завершено") >= 0 || statusText.indexOf("Закончен") >= 0) status = 1;
+        else if (statusText.indexOf("процесс") >= 0 || statusText.indexOf("Пишется") >= 0) status = 0;
+        else if (statusText.indexOf("заморож") >= 0) status = 2;
 
-        // Chapters live under a.work-cover-content + ul.table-of-content li a
         const chapters = [];
-        const chLinks = doc.select("ul.table-of-content li a, .book-toc a, .chapters-list a");
+        const chLinks = doc.select("ul.table-of-content li a, .book-toc a");
         for (const a of chLinks) {
             const href = a.attr("href");
             if (!href || href.indexOf("/reader/") < 0) continue;
@@ -132,15 +121,7 @@ class DefaultExtension extends MProvider {
             });
         }
 
-        return {
-            name: name,
-            imageUrl: imageUrl,
-            description: descriptionText,
-            author: author,
-            genre: genre,
-            status: status,
-            chapters: chapters
-        };
+        return { name, imageUrl, description: descriptionText, author, genre, status, chapters };
     }
 
     async getHtmlContent(name, url) {

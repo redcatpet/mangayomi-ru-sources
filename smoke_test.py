@@ -172,7 +172,7 @@ def check_tlrulate():
 
 def check_author_today():
     print("\n[5/5] Author.Today")
-    status, body = fetch("https://author.today/catalog/all/popular?page=1")
+    status, body = fetch("https://author.today/search?category=works&filter=top&page=1")
     if status != 200:
         print(f"  ⚠ HTTP {status} — expected (Cloudflare geo-block), skipping.")
         return

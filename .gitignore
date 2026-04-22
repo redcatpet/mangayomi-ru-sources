@@ -1,4 +1,5 @@
 _refs/
+_scratch/
 __pycache__/
 *.pyc
 .DS_Store

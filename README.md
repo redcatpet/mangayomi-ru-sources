@@ -1,6 +1,6 @@
 # Mangayomi RU Sources
 
-Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **30 русских источников** манги, аниме и новелл.
+Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **28 русских источников** манги, аниме и новелл.
 
 Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, Jut.su, AniLibria (новый API), Ранобэ.рф и др.
 
@@ -14,10 +14,10 @@
 
 | Что подключить | URL |
 |---|---|
-| **Всё (30 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
+| **Всё (28 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
 | Только манга (12) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
-| Только аниме (10) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
-| Только новеллы (8) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
+| Только аниме (9) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
+| Только новеллы (7) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
 
 После импорта включи нужные источники в списке.
 
@@ -25,7 +25,7 @@
 
 ## Статус каждого источника
 
-Версия `0.2.0` — после крупного обновления на основе Aidoku-референсов (Skittyblock/aidoku-community-sources, SolsticeLeaf/aidoku-ru-sources).
+Версия `0.3.0` — крупный рефакторинг: все источники расширяют `MProvider` напрямую (убраны промежуточные базовые классы — Mangayomi's QuickJS не всегда корректно обрабатывал многоуровневое наследование). Плюс исправлены site_id в Lib-семействе, актуализированы пути каталогов у Acomics/Author.Today/Jaomix/Ранобэ.рф и удалены мёртвые домены (shiz.cc, novel-tl.com).
 
 ### Манга (12)
 
@@ -36,15 +36,15 @@
 | **SelfManga** | `1.selfmanga.live` | ✅ Подтверждено живыми probes | — |
 | **AllHentai** | `20.allhen.online` | ⚠ 18+ | Домен меняется — при DNS fail поменяй в настройках |
 | **Desu.Me** | `desu.uno` (desu.me/desu.city редиректят сюда) | ✅ API `/manga/api` | Иногда Cloudflare |
-| **MangaLib** | `mangalib.me` (API `api.cdnlibs.org/api`) | ✅ Fixed covers через weserv-proxy | Для 18+ нужен Bearer token |
-| **YaoiLib** | `yaoilib.me` | ✅ 18+ BL | Bearer token для взрослого |
-| **HentaiLib** | `hentailib.me` | ✅ 18+ | Почти весь контент за токеном |
+| **MangaLib** | `mangalib.me` (API `api.cdnlibs.org/api`, site_id=1) | ✅ Fixed covers через weserv-proxy | Для 18+ нужен Bearer token |
+| **YaoiLib** | `yaoilib.me` (site_id=6) | ✅ 18+ BL | Bearer token для взрослого |
+| **HentaiLib** | `hentailib.me` (site_id=4) | ✅ 18+ | Почти весь контент за токеном |
 | **Remanga** | `remanga.org` (API v2) | ✅ Переписано на api.remanga.org/api/v2/ | Bearer token для платного |
 | **NewManga** | `newmanga.org` | 🔧 MVP | API может меняться |
 | **MangaBuff** | `mangabuff.ru` | ✅ Selectors выверены по Aidoku | — |
 | **Acomics** | `acomics.ru` | 🔧 MVP | Русские веб-комиксы |
 
-### Аниме (10)
+### Аниме (9)
 
 | Источник | Домен | Статус видео | Примечания |
 |---|---|---|---|
@@ -52,23 +52,23 @@
 | **Jut.Su** | `jut.su` | ⚠ Каталог/эпизоды — ✅ (cp1251 декодер); видео — ❌ | `<source>` теги на пустом pixel.png, реальный URL подгружает JS. Смотри через кнопку Webview |
 | **AnimeVost** | `animevost.org` (API v1) | ✅ MP4 480p/720p | Работает полноценно |
 | **AnimeGO** | `animego.me` | ⚠ Каталог ✅, видео — только iframe | Видео через Kodik iframe, без полной экстракции HLS |
-| **AniLib** | `anilib.me` (API `api.cdnlibs.org/api`) | ⚠ Базовый extractor | Плееры Kodik/Sibnet/Libria |
+| **AniLib** | `anilib.me` (API `api.cdnlibs.org/api`, site_id=5) | ⚠ Базовый extractor | Плееры Kodik/Sibnet/Libria |
 | **Animedia** | `amd.online` | 🔧 MVP | .tv/.my мёртвые — переехали на amd.online |
 | **Sovetromantica** | `sovetromantica.com` | ❌ Каталог через JS | Смотри через Webview |
 | **AnimeJoy** | `animejoy.ru` | ⚠ Каталог ✅, эпизоды стаб | Полные эпизоды через AJAX — WIP |
-| **Shiz.cc** | `shiz.cc` | ❌ Домен мёртв | Укажи живое зеркало в настройках |
-| **Animeshka** | `animeshka.com` | ❌ Домен недоступен | Укажи живое зеркало в настройках |
+| **Animeshka** | `animeshka.net` | 🔧 MVP | `.com` умер, переехали на `.net` |
 
-### Новеллы (8)
+> Удалены как мёртвые домены: **Shiz.cc**, **Novel-Tl**.
+
+### Новеллы (7)
 
 | Источник | Домен | Чтение глав | Примечания |
 |---|---|---|---|
 | **Tl.Rulate** | `tl.rulate.ru` | ✅ `getHtmlContent` добавлен | Бесплатные главы, платные требуют вход на сайте |
 | **Author.Today** | `author.today` | ⚠ Требует session cookie | Текст AES-зашифрован, без cookie только каталог |
-| **RanobeLib** | `ranobelib.me` (lib API) | ✅ ProseMirror → HTML конвертер | Bearer token для платного |
-| **Ранобэ.рф** | `ранобэ.рф` (punycode) | ✅ JSON API v2 | — |
+| **RanobeLib** | `ranobelib.me` (lib API, site_id=3) | ✅ ProseMirror → HTML конвертер | Bearer token для платного |
+| **Ранобэ.рф** | `ранобэ.рф` (punycode) | ✅ v3 API + Next.js data | — |
 | **Jaomix** | `jaomix.ru` | ✅ WordPress | — |
-| **Novel-Tl** | `novel-tl.com` | ✅ HTML | — |
 | **RanobeHub** | `ranobehub.org` | ✅ JSON API | — |
 | **Litnet** | `litnet.com` | ⚠ Требует session cookie | Только бесплатные книги без подписки |
 

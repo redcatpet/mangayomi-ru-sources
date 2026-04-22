@@ -1,18 +1,18 @@
 const mangayomiSources = [{
     "name": "Animeshka",
     "lang": "ru",
-    "baseUrl": "https://animeshka.com",
+    "baseUrl": "https://animeshka.net",
     "apiUrl": "",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.2",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animeshka.js",
-    "notes": "⚠ Источник WIP. animeshka.com часто недоступен — замените baseUrl в настройках на рабочее зеркало. При вечном spinner'е проверьте домен в браузере."
+    "notes": "Актуальное зеркало: animeshka.net (старый animeshka.com умер). При блокировке замените baseUrl в настройках."
 }];
 
 const AS_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
