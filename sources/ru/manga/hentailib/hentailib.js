@@ -27,9 +27,9 @@ class DefaultExtension extends MProvider {
 
     async getPopular(page) { return await libGetPopular(this.client, this.source, HENTAILIB_SITE_ID, "manga", page); }
     async getLatestUpdates(page) { return await libGetLatest(this.client, this.source, HENTAILIB_SITE_ID, "manga", page); }
-    async search(query, page, filters) { return await libSearch(this.client, this.source, HENTAILIB_SITE_ID, "manga", query, page); }
+    async search(query, page, filters) { return await libSearch(this.client, this.source, HENTAILIB_SITE_ID, "manga", query, page, filters); }
     async getDetail(slug) { return await libMangaDetail(this.client, this.source, HENTAILIB_SITE_ID, slug); }
     async getPageList(url) { return await libMangaPageList(this.client, this.source, HENTAILIB_SITE_ID, url); }
-    getFilterList() { return []; }
+    getFilterList() { return libFilterList(); }
     getSourcePreferences() { return libSourcePreferences(); }
 }

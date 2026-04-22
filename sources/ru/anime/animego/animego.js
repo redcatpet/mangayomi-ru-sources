@@ -97,7 +97,41 @@ class DefaultExtension extends MProvider {
         return this.parseCatalog(res.body);
     }
     async search(query, page, filters) {
-        const res = await this.client.get(`${this.source.baseUrl}/search/anime?q=${encodeURIComponent(query || "")}&page=${page}`, this.headers);
+        if (query) {
+            const res = await this.client.get(`${this.source.baseUrl}/search/anime?q=${encodeURIComponent(query)}&page=${page}`, this.headers);
+            if (res.statusCode !== 200) return { list: [], hasNextPage: false };
+            return this.parseCatalog(res.body);
+        }
+        // Path-based filters: /anime/genre/{slug} or /anime/status/{slug} or /anime/type/{slug}
+        let base = `${this.source.baseUrl}/anime`;
+        if (filters && filters.length) {
+            const f0 = filters[0]; // Genre single-select
+            if (f0 && f0.values) {
+                const idx = f0.state || 0;
+                const slug = f0.values[idx].value;
+                if (slug) base = `${this.source.baseUrl}/anime/genre/${slug}`;
+            }
+            const f1 = filters[1]; // Status
+            if (f1 && f1.values) {
+                const idx = f1.state || 0;
+                const slug = f1.values[idx].value;
+                if (slug && base === `${this.source.baseUrl}/anime`) base = `${this.source.baseUrl}/anime/status/${slug}`;
+            }
+            const f2 = filters[2]; // Type
+            if (f2 && f2.values) {
+                const idx = f2.state || 0;
+                const slug = f2.values[idx].value;
+                if (slug && base === `${this.source.baseUrl}/anime`) base = `${this.source.baseUrl}/anime/type/${slug}`;
+            }
+        }
+        // Sort
+        let sort = "rating", dir = "desc";
+        if (filters && filters[3] && filters[3].values) {
+            const idx = (filters[3].state && filters[3].state.index) || 0;
+            sort = filters[3].values[idx].value || "rating";
+            dir = filters[3].state && filters[3].state.ascending ? "asc" : "desc";
+        }
+        const res = await this.client.get(`${base}?sort=${sort}&direction=${dir}&page=${page}`, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
@@ -186,6 +220,49 @@ class DefaultExtension extends MProvider {
         return videos;
     }
 
-    getFilterList() { return []; }
+    getFilterList() {
+        const genres = [
+            ["— Любой —", ""], ["Боевик", "action"], ["Приключения", "adventure"],
+            ["Комедия", "comedy"], ["Драма", "drama"], ["Фэнтези", "fantasy"],
+            ["Ужасы", "horror"], ["Мистика", "mystery"], ["Мифология", "mythology"],
+            ["Романтика", "romance"], ["Научная фантастика", "sci-fi"], ["Сэйнэн", "seinen"],
+            ["Сёнен", "shounen"], ["Сёдзё", "shoujo"], ["Сверхъестественное", "supernatural"],
+            ["Повседневность", "slice-of-life"], ["Гурман", "gourmet"],
+            ["Меха", "mecha"], ["Музыка", "music"], ["Спорт", "sports"],
+            ["Этти", "ecchi"], ["Гарем", "harem"], ["Школа", "school"],
+            ["Исторический", "historical"], ["Психологическое", "psychological"],
+            ["Триллер", "thriller"], ["Исекай", "isekai"],
+            ["Боевые искусства", "martial-arts"], ["Магия", "magic"],
+            ["Демоны", "demons"], ["Вампиры", "vampires"]
+        ];
+        const statuses = [
+            ["— Любой —", ""], ["Онгоинг", "ongoing"], ["Вышло", "released"], ["Анонс", "anons"]
+        ];
+        const types = [
+            ["— Любой —", ""], ["TV Сериал", "tv"], ["Фильм", "movie"],
+            ["ONA", "ona"], ["OVA", "ova"], ["Спешл", "special"]
+        ];
+        return [
+            {
+                type_name: "SelectFilter", type: "genre", name: "Жанр", state: 0,
+                values: genres.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter", type: "status", name: "Статус", state: 0,
+                values: statuses.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter", type: "type", name: "Тип", state: 0,
+                values: types.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SortFilter", type: "sort", name: "Сортировка",
+                state: { type_name: "SortState", index: 0, ascending: false },
+                values: [
+                    ["Рейтинг", "rating"], ["Дата начала", "startDate"], ["Название", "name"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            }
+        ];
+    }
     getSourcePreferences() { return []; }
 }

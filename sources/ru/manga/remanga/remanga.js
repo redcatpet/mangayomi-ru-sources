@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/remanga.js",
@@ -72,10 +72,43 @@ class DefaultExtension extends MProvider {
     }
 
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.apiUrl}/search/?query=${encodeURIComponent(query || "")}&count=30&field=titles&page=${page}`,
-            this.headers
-        );
+        // If query is provided use the search endpoint; otherwise use the catalog endpoint with filter params.
+        if (query) {
+            const res = await this.client.get(
+                `${this.source.apiUrl}/search/?query=${encodeURIComponent(query)}&count=30&field=titles&page=${page}`,
+                this.headers
+            );
+            if (res.statusCode !== 200) return { list: [], hasNextPage: false };
+            return this.parseList(res.body);
+        }
+
+        let url = `${this.source.apiUrl}/search/catalog/?count=30&page=${page}`;
+        if (filters && filters.length) {
+            // [0] SortFilter → ordering
+            const f0 = filters[0];
+            if (f0 && f0.values) {
+                const idx = (f0.state && f0.state.index != null) ? f0.state.index : 0;
+                const asc = !!(f0.state && f0.state.ascending);
+                const val = f0.values[idx].value;
+                if (val === "random") url += `&ordering=random`;
+                else url += `&ordering=${asc ? "" : "-"}${val}`;
+            }
+            // [1] Types
+            const f1 = filters[1];
+            if (f1 && f1.state) for (const x of f1.state) if (x.state) url += `&types=${x.value}`;
+            // [2] Age limit
+            const f2 = filters[2];
+            if (f2 && f2.state) for (const x of f2.state) if (x.state) url += `&age_limit=${x.value}`;
+            // [3] Status
+            const f3 = filters[3];
+            if (f3 && f3.state) for (const x of f3.state) if (x.state) url += `&status=${x.value}`;
+            // [4] Genres (multi-select)
+            const f4 = filters[4];
+            if (f4 && f4.state) for (const x of f4.state) if (x.state) url += `&genres=${x.value}`;
+        } else {
+            url += "&ordering=-rating";
+        }
+        const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseList(res.body);
     }
@@ -152,7 +185,63 @@ class DefaultExtension extends MProvider {
         return flat.map(p => ({ url: p.link, headers: this.headers }));
     }
 
-    getFilterList() { return []; }
+    getFilterList() {
+        return [
+            {
+                type_name: "SortFilter",
+                type: "ordering",
+                name: "Сортировка",
+                state: { type_name: "SortState", index: 0, ascending: false },
+                values: [
+                    ["По рейтингу", "rating"],
+                    ["По просмотрам", "views"],
+                    ["По обновлению", "chapter_date"],
+                    ["По ID (новое)", "id"],
+                    ["Случайно", "random"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "types",
+                name: "Тип",
+                state: [
+                    ["Манга", 1], ["Манхва", 2], ["Маньхуа", 3], ["Западный комикс", 4],
+                    ["Русскомикс", 5], ["Индонезийский", 6], ["Новелла", 7]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: String(x[1]) }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "age_limit",
+                name: "Возраст",
+                state: [
+                    ["Нет", 0], ["16+", 1], ["18+", 2]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: String(x[1]) }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "status",
+                name: "Статус",
+                state: [
+                    ["Продолжается", 2], ["Закончен", 1], ["Заморожен", 3], ["Нет переводчика", 4], ["Анонс", 5]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: String(x[1]) }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "genres",
+                name: "Жанры",
+                state: [
+                    ["Экшен", 2], ["Боевые искусства", 3], ["Гарем", 5], ["Героическое фэнтези", 7],
+                    ["Детектив", 8], ["Дзёсэй", 9], ["Додзинси", 10], ["Драма", 11], ["История", 13],
+                    ["Киберпанк", 14], ["Кодомо", 15], ["Комедия", 50], ["Махо-сёдзё", 17], ["Меха", 18],
+                    ["Повседневность", 21], ["Приключения", 23], ["Романтика", 25],
+                    ["Сверхъестественное", 27], ["Сёдзё", 28], ["Сёнэн", 30], ["Спорт", 31],
+                    ["Сэйнэн", 32], ["Трагедия", 34], ["Триллер", 35], ["Ужасы", 36], ["Фэнтези", 38],
+                    ["Школьники", 39], ["Этти", 40], ["Юри", 41], ["Яой", 42],
+                    ["Боевик", 59], ["Историческая проза", 61], ["Война", 66], ["Гурман", 239]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: String(x[1]) }))
+            }
+        ];
+    }
 
     getSourcePreferences() {
         return [{

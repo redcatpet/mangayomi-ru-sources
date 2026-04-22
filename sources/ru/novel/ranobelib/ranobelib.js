@@ -27,7 +27,7 @@ class DefaultExtension extends MProvider {
 
     async getPopular(page) { return await libGetPopular(this.client, this.source, RANOBELIB_SITE_ID, "manga", page); }
     async getLatestUpdates(page) { return await libGetLatest(this.client, this.source, RANOBELIB_SITE_ID, "manga", page); }
-    async search(query, page, filters) { return await libSearch(this.client, this.source, RANOBELIB_SITE_ID, "manga", query, page); }
+    async search(query, page, filters) { return await libSearch(this.client, this.source, RANOBELIB_SITE_ID, "manga", query, page, filters); }
 
     async getDetail(slug) {
         const headers = libApiHeaders(this.source, RANOBELIB_SITE_ID);
@@ -82,6 +82,6 @@ class DefaultExtension extends MProvider {
         return [await this.getHtmlContent("", url)];
     }
 
-    getFilterList() { return []; }
+    getFilterList() { return libFilterList(); }
     getSourcePreferences() { return libSourcePreferences(); }
 }

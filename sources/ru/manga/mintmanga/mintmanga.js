@@ -41,13 +41,7 @@ class DefaultExtension extends MProvider {
 
     async search(query, page, filters) {
         const baseUrl = this.getBaseUrl();
-        let sort = "RATING";
-        if (filters && filters[0] && filters[0].values) {
-            const idx = (filters[0].state && filters[0].state.index) || 0;
-            sort = filters[0].values[idx].value;
-        }
-        const offset = (page - 1) * 70;
-        const url = `${baseUrl}/search/advancedResults?q=${encodeURIComponent(query || "")}&offset=${offset}&sortType=${sort}`;
+        const url = groupleSearchUrl(baseUrl, query, page, filters);
         const res = await this.client.get(url, groupleHeaders(baseUrl));
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return groupleParseList(res.body, baseUrl);

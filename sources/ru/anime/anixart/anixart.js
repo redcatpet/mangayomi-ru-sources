@@ -43,40 +43,91 @@ class DefaultExtension extends MProvider {
         }));
     }
 
-    async fetchFilter(sort, page) {
-        const url = `${this.source.apiUrl}/filter/${page - 1}?sort=${sort}`;
-        const res = await this.client.get(url, this.headers);
+    buildFilterBody(sort, filters) {
+        // Builds POST body for /filter/{page}. Returns urlencoded string.
+        const parts = [`sort=${sort}`];
+        if (filters && filters.length) {
+            // [1] Genres — TriState. State=1 include (comma join), State=2 exclude via is_genres_excluded_mode.
+            const f1 = filters[1];
+            const included = [], excluded = [];
+            if (f1 && f1.state) {
+                for (const g of f1.state) {
+                    if (g.state === 1) included.push(g.value);
+                    else if (g.state === 2) excluded.push(g.value);
+                }
+            }
+            if (included.length) parts.push(`genres=${encodeURIComponent(included.join(","))}`);
+            if (excluded.length) {
+                parts.push(`genres=${encodeURIComponent(excluded.join(","))}`);
+                parts.push(`is_genres_excluded_mode_enabled=true`);
+            }
+            // [2] Status
+            const f2 = filters[2];
+            if (f2 && f2.values) {
+                const idx = f2.state || 0;
+                const v = f2.values[idx].value;
+                if (v) parts.push(`status=${v}`);
+            }
+            // [3] Category (TV/Movie/OVA/ONA/Special)
+            const f3 = filters[3];
+            if (f3 && f3.values) {
+                const idx = f3.state || 0;
+                const v = f3.values[idx].value;
+                if (v) parts.push(`category=${v}`);
+            }
+        }
+        return parts.join("&");
+    }
+
+    async fetchFilter(sort, page, filters) {
+        // POST body with sort + filter fields is more robust than GET query params.
+        const body = this.buildFilterBody(sort, filters);
+        const url = `${this.source.apiUrl}/filter/${page - 1}`;
+        const postHeaders = { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" };
+        let res = await this.client.post(url, postHeaders, body);
+        // Fallback to GET if POST returns empty (some regions)
+        if (!res || res.statusCode !== 200 || !res.body) {
+            res = await this.client.get(`${url}?${body}`, this.headers);
+        }
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         const json = JSON.parse(res.body);
         const content = json.content || [];
         return { list: this.mapList(content), hasNextPage: content.length >= AX_PAGE_SIZE };
     }
 
-    async getPopular(page) { return await this.fetchFilter(4, page); }        // sort=4: by views
-    async getLatestUpdates(page) { return await this.fetchFilter(1, page); }   // sort=1: newest episodes
+    async getPopular(page) { return await this.fetchFilter(4, page); }
+    async getLatestUpdates(page) { return await this.fetchFilter(1, page); }
 
     async search(query, page, filters) {
-        // API search endpoint is flaky from non-RU IPs; fall back to client-side filter on popular list.
-        if (!query) return await this.getPopular(page);
-        const res = await this.client.post(
-            `${this.source.apiUrl}/search/releases/${page - 1}`,
-            { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" },
-            `query=${encodeURIComponent(query)}&searchBy=1`
-        );
-        if (res.statusCode === 200 && res.body) {
-            try {
-                const json = JSON.parse(res.body);
-                const list = this.mapList(json.content || []);
-                if (list.length) return { list, hasNextPage: list.length >= AX_PAGE_SIZE };
-            } catch (e) {}
+        // Sort derived from filter[0] if present, else default to 4 (views).
+        let sort = 4;
+        if (filters && filters[0] && filters[0].values) {
+            const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
+            const v = parseInt(filters[0].values[idx].value);
+            if (!isNaN(v)) sort = v;
         }
-        // Fallback: popular + client-side substring filter
-        const pop = await this.getPopular(page);
-        const q = query.toLowerCase();
-        return {
-            list: pop.list.filter(m => m.name.toLowerCase().indexOf(q) >= 0),
-            hasNextPage: pop.hasNextPage
-        };
+
+        if (query) {
+            const res = await this.client.post(
+                `${this.source.apiUrl}/search/releases/${page - 1}`,
+                { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" },
+                `query=${encodeURIComponent(query)}&searchBy=1`
+            );
+            if (res.statusCode === 200 && res.body) {
+                try {
+                    const json = JSON.parse(res.body);
+                    const list = this.mapList(json.content || []);
+                    if (list.length) return { list, hasNextPage: list.length >= AX_PAGE_SIZE };
+                } catch (e) {}
+            }
+            const pop = await this.getPopular(page);
+            const q = query.toLowerCase();
+            return {
+                list: pop.list.filter(m => m.name.toLowerCase().indexOf(q) >= 0),
+                hasNextPage: pop.hasNextPage
+            };
+        }
+        return await this.fetchFilter(sort, page, filters);
     }
 
     parseStatus(s) {
@@ -178,6 +229,56 @@ class DefaultExtension extends MProvider {
         return videos;
     }
 
-    getFilterList() { return []; }
+    getFilterList() {
+        return [
+            {
+                type_name: "SortFilter",
+                type: "sort",
+                name: "Сортировка",
+                state: { type_name: "SortState", index: 0, ascending: false },
+                values: [
+                    ["По просмотрам", "4"],
+                    ["Новые эпизоды", "1"],
+                    ["По рейтингу", "2"],
+                    ["По кол-ву оценок", "3"],
+                    ["По дате добавления", "5"],
+                    ["По алфавиту", "6"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "genres",
+                name: "Жанры",
+                state: [
+                    "Экшен", "Приключения", "Комедия", "Драма", "Фэнтези", "Романтика",
+                    "Школа", "Сёнэн", "Сёдзё", "Сэйнэн", "Спорт", "Ужасы", "Детектив",
+                    "Триллер", "Меха", "Магия", "Исекай", "Повседневность",
+                    "Сверхъестественное", "Психологическое", "Пародия", "Фантастика",
+                    "Музыка", "Махо-сёдзё", "Вампиры", "Военное", "Игры", "Исторический",
+                    "Полиция", "Боевые искусства", "Самураи", "Космос", "Демоны",
+                    "Дзёсэй", "Супер сила", "Гарем", "Этти", "Кодомо"
+                ].map(x => ({ type_name: "TriState", name: x, value: x }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "status",
+                name: "Статус",
+                state: 0,
+                values: [
+                    ["— Любой —", ""], ["Онгоинг", "1"], ["Вышел", "2"], ["Анонс", "3"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "category",
+                name: "Категория",
+                state: 0,
+                values: [
+                    ["— Любая —", ""], ["TV Сериал", "1"], ["Фильм", "2"],
+                    ["OVA", "3"], ["ONA", "4"], ["Спешл", "5"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            }
+        ];
+    }
     getSourcePreferences() { return []; }
 }
