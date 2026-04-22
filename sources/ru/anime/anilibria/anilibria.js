@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/anilibria.js",
@@ -128,7 +128,6 @@ class DefaultExtension extends MProvider {
     }
 
     async getVideoList(url) {
-        // url is the packed "q|u\nq|u\n..." string we built in getDetail
         const lines = (url || "").split("\n").filter(x => x.trim());
         const videos = [];
         for (const line of lines) {
@@ -143,15 +142,30 @@ class DefaultExtension extends MProvider {
                 headers: this.headers
             });
         }
-        // Higher quality first
+        // Order by user preference (default 720 — good balance for most connections)
+        const pref = (new SharedPreferences()).get("default_quality") || "720";
         videos.sort((a, b) => {
             const qa = parseInt((a.quality.match(/(\d+)p/) || [0, 0])[1]);
             const qb = parseInt((b.quality.match(/(\d+)p/) || [0, 0])[1]);
+            // Preferred quality goes first; otherwise high-to-low
+            if (a.quality.indexOf(pref + "p") >= 0) return -1;
+            if (b.quality.indexOf(pref + "p") >= 0) return 1;
             return qb - qa;
         });
         return videos;
     }
 
     getFilterList() { return []; }
-    getSourcePreferences() { return []; }
+    getSourcePreferences() {
+        return [{
+            key: "default_quality",
+            listPreference: {
+                title: "Качество по умолчанию",
+                summary: "Какое качество открывать первым. Остальные доступны в меню плеера.",
+                valueIndex: 1,
+                entries: ["480p (минимум трафика)", "720p (рекомендуется)", "1080p (лучшее)"],
+                entryValues: ["480", "720", "1080"]
+            }
+        }];
+    }
 }

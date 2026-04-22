@@ -47,13 +47,20 @@ class DefaultExtension extends MProvider {
         const doc = new Document(htmlBody);
         const cards = doc.select("div.book-row");
         const list = [];
+        const seen = {};
         for (const c of cards) {
-            const linkEl = c.selectFirst("div.book-title a, a.book-cover-content") || c.selectFirst("a[href*='/work/']");
-            if (!linkEl) continue;
-            const link = linkEl.attr("href");
-            if (!link) continue;
-            const titleEl = c.selectFirst("div.book-title a") || linkEl;
-            const name = (titleEl.text || titleEl.attr("title") || "").trim();
+            // Only rows with book-row-content are real books — generic div.book-row also wraps nav/genre strips.
+            if (!c.selectFirst("div.book-row-content")) continue;
+            const titleLink = c.selectFirst("div.book-title a") || c.selectFirst("a.book-cover-content");
+            if (!titleLink) continue;
+            let link = titleLink.attr("href") || "";
+            // Strip trailing fragments/suffixes
+            link = link.split("#")[0].replace(/\/(reviews|comments)\/?$/, "");
+            // Require /work/{numeric_id} format
+            if (!/^\/work\/\d+/.test(link)) continue;
+            if (seen[link]) continue;
+            seen[link] = true;
+            const name = (titleLink.text || titleLink.attr("title") || "").trim();
             if (!name) continue;
             const img = c.selectFirst("div.cover-image img") || c.selectFirst("img");
             let imageUrl = "";
@@ -63,7 +70,7 @@ class DefaultExtension extends MProvider {
             }
             list.push({ name, imageUrl, link });
         }
-        const hasNextPage = list.length >= 20 || !!doc.selectFirst("a[rel=next], li.next a, a.page-link[aria-label*='следу']");
+        const hasNextPage = list.length >= 10 || !!doc.selectFirst("a[rel=next], li.next a, a.page-link[aria-label*='следу']");
         return { list, hasNextPage };
     }
 

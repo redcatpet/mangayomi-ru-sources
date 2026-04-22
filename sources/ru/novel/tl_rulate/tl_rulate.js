@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
-    "notes": "Любительские переводы. Некоторые главы платные и требуют логина — MVP показывает бесплатные."
+    "notes": "Любительские переводы. Карточки — div.row-book, span.t-title. Бесплатные главы доступны всем; платные — требуют логин на сайте."
 }];
 
 const RULATE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -41,37 +41,27 @@ class DefaultExtension extends MProvider {
     parseBookList(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        // Search/catalog results live in div.span2 cards with book link and cover
-        let cards = doc.select("div.book");
+        const seen = {};
+        // Current layout uses div.row-book; ul.search-results li retained as legacy fallback
+        let cards = doc.select("div.row-book");
         if (cards.length === 0) cards = doc.select("ul.search-results li");
-        if (cards.length === 0) cards = doc.select("div.bookshelf-item");
-        if (cards.length === 0) {
-            // Fallback — any anchor that points to /book/{id}
-            cards = doc.select("div.span2").filter(e => e.selectFirst("a[href^='/book/']"));
-        }
         for (const c of cards) {
             const a = c.selectFirst("a[href^='/book/']");
             if (!a) continue;
-            const link = a.attr("href");
-            const img = c.selectFirst("img");
-            let imageUrl = img ? (img.attr("src") || img.attr("data-src") || "") : "";
-            imageUrl = this.absUrl(imageUrl);
-            // Title may be inside <p.book-title> or anchor title attr
-            const titleEl = c.selectFirst(".book-title, h5, h4, p.t-title") || a;
+            const link = a.attr("href") || "";
+            if (!link || seen[link]) continue;
+            // Accept only real book URLs like /book/12345
+            if (!/^\/book\/\d+/.test(link)) continue;
+            seen[link] = true;
+            let imageUrl = "";
+            const img = c.selectFirst("img[src^='/i/book/']") || c.selectFirst("img");
+            if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+            const titleEl = c.selectFirst("span.t-title") || c.selectFirst("p.t-title") || c.selectFirst(".book-title, h5, h4") || a;
             const name = (titleEl.text || a.attr("title") || "").trim();
             if (!name) continue;
-            list.push({ name: name, imageUrl: imageUrl, link: link });
+            list.push({ name, imageUrl, link });
         }
-        // Dedup
-        const seen = new Set();
-        const dedup = list.filter(x => {
-            if (seen.has(x.link)) return false;
-            seen.add(x.link);
-            return true;
-        });
-        // Pagination: link rel=next or "»" in .pagination
-        const hasNextPage = dedup.length >= 20;
-        return { list: dedup, hasNextPage: hasNextPage };
+        return { list, hasNextPage: list.length >= 20 };
     }
 
     async getPopular(page) {

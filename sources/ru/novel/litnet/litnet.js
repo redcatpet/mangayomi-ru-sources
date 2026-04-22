@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/litnet.js",
-    "notes": "Коммерческая платформа. Без платной подписки читаются только бесплатные книги — MVP отображает всё, но при открытии платной главы вы увидите превью."
+    "notes": "Коммерческая платформа. Каталог — div.row.book-item; детальная страница и список глав требуют JS (Angular). Для чтения купленных книг вставьте session cookie в настройках."
 }];
 
 const LN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -44,20 +44,26 @@ class DefaultExtension extends MProvider {
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
-        const items = doc.select("div.book-item, article.book, .books-grid .book");
+        const seen = {};
+        // Current layout: <div class="row book-item"> with book-title / book-img
+        const items = doc.select("div.row.book-item, div.book-item, div.book-search-item");
         for (const it of items) {
-            const a = it.selectFirst("a.book-title, a.title, h3 a, h4 a, a");
-            if (!a) continue;
-            const href = a.attr("href");
-            if (!href) continue;
-            const name = a.text.trim() || (it.selectFirst(".title") ? it.selectFirst(".title").text.trim() : "");
+            const titleA = it.selectFirst("h4.book-title a") || it.selectFirst(".book-title a") || it.selectFirst("a[href*='/ru/book/']");
+            if (!titleA) continue;
+            const href = titleA.attr("href") || "";
+            if (!href || seen[href]) continue;
+            if (!/\/ru\/book\//.test(href)) continue;
+            seen[href] = true;
+            // title is inside span[itemprop=name] on current layout
+            const nameEl = titleA.selectFirst("span[itemprop=name]") || titleA;
+            const name = (nameEl.text || titleA.attr("title") || "").trim();
             if (!name) continue;
-            const img = it.selectFirst("img");
-            const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
+            const img = it.selectFirst("img[itemprop=image]") || it.selectFirst(".book-img img") || it.selectFirst("img");
+            let imageUrl = "";
+            if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
             list.push({ name, imageUrl, link: href });
         }
-        const hasNextPage = !!doc.selectFirst("a[rel=next], .pagination__next a");
-        return { list, hasNextPage: hasNextPage || list.length >= 20 };
+        return { list, hasNextPage: list.length >= 10 };
     }
 
     async getPopular(page) {
@@ -88,28 +94,25 @@ class DefaultExtension extends MProvider {
     async getDetail(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
-        const name = (doc.selectFirst("h1.book-heading, h1.book-title, h1")).text.trim();
-        const imgEl = doc.selectFirst(".book-cover img, .cover img");
-        const imageUrl = imgEl ? this.absUrl(imgEl.attr("src") || "") : "";
-        const descEl = doc.selectFirst("div.annotation, .book-annotation");
-        const description = descEl ? descEl.text.trim() : "";
-        const genre = doc.select(".book-genres a, .genre-tag").map(e => e.text.trim()).filter(x => x);
-        const author = (doc.selectFirst("a.author, .book-authors a") || { text: "" }).text.trim();
+        // Detail page is Angular-rendered; only og:* meta survives SSR.
+        const ogTitle = doc.selectFirst("meta[property=og:title]");
+        const ogImage = doc.selectFirst("meta[property=og:image]");
+        const ogDesc = doc.selectFirst("meta[property=og:description]");
+        const name = ogTitle ? (ogTitle.attr("content") || "") : ((doc.selectFirst("h1") || { text: "" }).text.trim() || url);
+        const imageUrl = ogImage ? (ogImage.attr("content") || "") : "";
+        const description = ogDesc ? (ogDesc.attr("content") || "") : "";
 
-        const chapters = [];
-        const chEls = doc.select("ul.contents-list li a, .book-toc a, .chapters-list a");
-        for (const a of chEls) {
-            const href = a.attr("href");
-            if (!href) continue;
-            chapters.push({
-                name: a.text.trim(),
-                url: href,
-                dateUpload: Date.now().toString(),
-                scanlator: null
-            });
-        }
+        // Single-entry "reader" chapter that opens /ru/reader/{slug} (site's own web reader)
+        const slugMatch = url.match(/\/ru\/book\/([^/?]+)/);
+        const slug = slugMatch ? slugMatch[1] : "";
+        const chapters = slug ? [{
+            name: "Читать в Webview",
+            url: `${this.source.baseUrl}/ru/reader/${slug}`,
+            dateUpload: Date.now().toString(),
+            scanlator: null
+        }] : [];
 
-        return { name, imageUrl, description, author, genre, status: 5, chapters: chapters.reverse() };
+        return { name, imageUrl, description, author: "", genre: [], status: 5, chapters };
     }
 
     async getHtmlContent(name, url) {
