@@ -32,8 +32,9 @@ class DefaultExtension extends MProvider {
 
     async getDetail(slug) {
         const headers = libApiHeaders(this.source, ANILIB_SITE_ID);
+        // `studios` is manga-only — sending it on anime causes HTTP 422 "fields.3 wrong".
         const infoRes = await this.client.get(
-            `${this.source.apiUrl}/anime/${slug}?fields[]=summary&fields[]=genres&fields[]=authors&fields[]=studios`,
+            `${this.source.apiUrl}/anime/${slug}?fields[]=summary&fields[]=genres&fields[]=authors`,
             headers
         );
         if (infoRes.statusCode !== 200) {

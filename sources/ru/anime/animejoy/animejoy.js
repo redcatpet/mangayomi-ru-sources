@@ -1,3 +1,5 @@
+// @include: kodik_extractor
+
 const mangayomiSources = [{
     "name": "AnimeJoy",
     "lang": "ru",
@@ -8,11 +10,11 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.2",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animejoy.js",
-    "notes": "DataLife Engine. Плееры через POST /engine/ajax/controller.php"
+    "notes": "DLE-движок. Плейлист через /engine/ajax/playlists.php?news_id=X&xfield=playlist. Своя CDN выдаёт прямые mp4 (1080/720/360); доп. опции — Kodik serial iframe."
 }];
 
 const AJ_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -26,7 +28,17 @@ class DefaultExtension extends MProvider {
     get headers() {
         return {
             "User-Agent": AJ_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "ru-RU,ru;q=0.9",
+            "Referer": this.source.baseUrl + "/"
+        };
+    }
+
+    get ajaxHeaders() {
+        return {
+            "User-Agent": AJ_UA,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
             "Referer": this.source.baseUrl + "/"
         };
     }
@@ -42,8 +54,6 @@ class DefaultExtension extends MProvider {
         const doc = new Document(htmlBody);
         const list = [];
         const seen = {};
-
-        // Current AnimeJoy template: div.story_line > a[href title] with <i.image.cover style="background-image:url(...)">
         let items = doc.select("div.story_line");
         for (const it of items) {
             const a = it.selectFirst("a");
@@ -53,9 +63,8 @@ class DefaultExtension extends MProvider {
             seen[href] = true;
             const name = ((a.attr("title") || "").split("[")[0] || a.text || "").trim();
             if (!name) continue;
-            // Image url in background-image style of <i class="image cover">
             let imageUrl = "";
-            const img = it.selectFirst("i.image, i.cover, .image.cover");
+            const img = it.selectFirst("i.image.cover, i.image, i.cover");
             if (img) {
                 const style = img.attr("style") || "";
                 const m = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
@@ -67,27 +76,7 @@ class DefaultExtension extends MProvider {
             }
             list.push({ name, imageUrl, link: href });
         }
-
-        // Fallback for older template
-        if (list.length === 0) {
-            const oldItems = doc.select("article.block, .sect-items article, div.short");
-            for (const it of oldItems) {
-                const a = it.selectFirst("h2.ntitle a, h3.short-title a, a.short-poster, a.short-img");
-                if (!a) continue;
-                const href = a.attr("href");
-                if (!href || seen[href]) continue;
-                seen[href] = true;
-                const img = it.selectFirst("img");
-                const imageUrl = img ? this.absUrl(img.attr("src") || img.attr("data-src") || "") : "";
-                const nameEl = it.selectFirst("h2.ntitle, h3.short-title, .short-title") || a;
-                const name = nameEl.text.trim();
-                if (!name) continue;
-                list.push({ name, imageUrl, link: href });
-            }
-        }
-
-        const hasNextPage = list.length >= 10;
-        return { list, hasNextPage };
+        return { list, hasNextPage: list.length >= 10 };
     }
 
     async getPopular(page) {
@@ -96,66 +85,187 @@ class DefaultExtension extends MProvider {
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
-    async getLatestUpdates(page) {
-        return await this.getPopular(page);
-    }
+    async getLatestUpdates(page) { return await this.getPopular(page); }
+
     async search(query, page, filters) {
-        // DLE search: POST to /index.php?do=search with story=...
-        const res = await this.client.post(
-            `${this.source.baseUrl}/index.php?do=search`,
-            { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" },
-            { "do": "search", "subaction": "search", "story": query, "search_start": String(page) }
-        );
+        const body = `do=search&subaction=search&story=${encodeURIComponent(query || "")}&search_start=${page}`;
+        const h = { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" };
+        const res = await this.client.post(`${this.source.baseUrl}/index.php?do=search`, h, body);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseCatalog(res.body);
     }
 
+    newsIdFromPage(doc, body) {
+        const el = doc.selectFirst(".playlists-ajax[data-news_id]");
+        if (el) return el.attr("data-news_id");
+        const m = (body || "").match(/data-news_id="(\d+)"/);
+        return m ? m[1] : "";
+    }
+
+    // Parse the playlists.php JSON.response HTML into provider index -> [{episode, url}...]
+    parsePlaylists(responseHtml) {
+        // Providers (0_0, 0_1, 0_2...) with name
+        const providers = {};
+        const provRe = /<li[^>]*data-id="(\d+)_(\d+)"[^>]*>([^<]+)<\/li>/g;
+        const videoRe = /<li[^>]*data-file="([^"]+)"[^>]*data-id="(\d+)_(\d+)"[^>]*>([^<]*)<\/li>/g;
+
+        // First pass: providers list
+        // The HTML has two sections — we can distinguish by whether the <li> has data-file.
+        let m;
+        const plain = responseHtml.replace(/&amp;/g, "&");
+        // Extract provider labels from playlists-items that DON'T have data-file
+        // Our regex provRe matches any li with data-id but excluding data-file could be tricky —
+        // instead, the first 10-20 <li data-id="0_N"> with no data-file are providers.
+        const liRe = /<li\b([^>]*)>([^<]*)<\/li>/g;
+        let li;
+        while ((li = liRe.exec(plain)) !== null) {
+            const attrs = li[1];
+            const text = li[2];
+            const idMatch = attrs.match(/data-id="(\d+)_(\d+)"/);
+            if (!idMatch) continue;
+            const fileMatch = attrs.match(/data-file="([^"]+)"/);
+            if (fileMatch) continue; // episode, skip in this pass
+            providers[`${idMatch[1]}_${idMatch[2]}`] = text.trim();
+        }
+
+        // Second pass: collect episodes
+        const episodes = {}; // episodeNumber -> [ { provider, url, title } ]
+        liRe.lastIndex = 0;
+        while ((li = liRe.exec(plain)) !== null) {
+            const attrs = li[1];
+            const text = li[2];
+            const idMatch = attrs.match(/data-id="(\d+)_(\d+)"/);
+            const fileMatch = attrs.match(/data-file="([^"]+)"/);
+            if (!idMatch || !fileMatch) continue;
+            const providerKey = `${idMatch[1]}_${idMatch[2]}`;
+            const providerName = providers[providerKey];
+            // Skip the provider-level row (0_N with ~ text or empty)
+            // — but we just want episodes. In animejoy's structure, "0_0" provider
+            // row contains a SINGLE <li data-file="kodik serial URL">~</li> that represents
+            // the whole season. For Kodik we expose it as a virtual "All episodes via Kodik" entry.
+            // For "0_1" (naш плеер) each li is a real episode.
+            const epLabel = text.trim() || `Серия ${idMatch[2]}`;
+            const key = epLabel;
+            if (!episodes[key]) episodes[key] = [];
+            episodes[key].push({
+                providerName: providerName || "?",
+                url: fileMatch[1],
+                epLabel
+            });
+        }
+        return { providers, episodes };
+    }
+
     async getDetail(url) {
-        const res = await this.client.get(this.absUrl(url), this.headers);
+        const detailUrl = this.absUrl(url);
+        const res = await this.client.get(detailUrl, this.headers);
         const doc = new Document(res.body);
-        const name = (doc.selectFirst("h1.ntitle, article h1")).text.trim();
-        const imgEl = doc.selectFirst(".poster img, .fposter img");
-        const imageUrl = imgEl ? this.absUrl(imgEl.attr("src") || "") : "";
+        const name = ((doc.selectFirst("h1.ntitle") || doc.selectFirst("article h1") || doc.selectFirst("h1") || { text: "" }).text || "").trim();
+        let imageUrl = "";
+        const img = doc.selectFirst(".poster img, .fposter img, article img");
+        if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+        if (!imageUrl) {
+            const og = doc.selectFirst("meta[property=og:image]");
+            if (og) imageUrl = og.attr("content") || "";
+        }
         const descEl = doc.selectFirst("div.pdesc, .storyitem");
         const description = descEl ? descEl.text.trim() : "";
-        const genre = doc.select("a[href*='/anime/genre/'], a[href*='/janr/']").map(e => e.text.trim());
+        const genre = doc.select("a[href*='/anime/genre/'], a[href*='/janr/']").map(e => e.text.trim()).filter(x => x);
 
-        // news id for episode ajax
-        const newsIdEl = doc.selectFirst("[data-news-id], [id^='news-id']");
-        const newsId = newsIdEl ? (newsIdEl.attr("data-news-id") || newsIdEl.attr("id").replace(/\D/g, "")) : "";
-        // On AnimeJoy each tital IS itself the episode list — the "url" of each ep is same page with ?episode=N
-        // For simplicity we expose one episode = full title page
-        const episodes = [{
-            name: "Все эпизоды",
-            url: this.absUrl(url),
-            dateUpload: Date.now().toString(),
-            scanlator: null
-        }];
+        const newsId = this.newsIdFromPage(doc, res.body);
+        const episodes = [];
+        if (newsId) {
+            const ajRes = await this.client.get(
+                `${this.source.baseUrl}/engine/ajax/playlists.php?news_id=${newsId}&xfield=playlist`,
+                this.ajaxHeaders
+            );
+            if (ajRes.statusCode === 200 && ajRes.body) {
+                try {
+                    const parsed = JSON.parse(ajRes.body);
+                    const html = parsed.response || "";
+                    const pl = this.parsePlaylists(html);
+
+                    // Build episodes — one per unique epLabel, packing ALL provider URLs
+                    for (const label of Object.keys(pl.episodes)) {
+                        const providers = pl.episodes[label];
+                        // Skip "~" placeholders (Kodik provider)
+                        const hasRealEpisode = providers.some(p => label !== "~");
+                        if (!hasRealEpisode) continue;
+                        const packed = providers.map(p => `${p.providerName}||${p.url}`).join("\n");
+                        episodes.push({
+                            name: label,
+                            url: packed,
+                            dateUpload: Date.now().toString(),
+                            scanlator: null
+                        });
+                    }
+                    episodes.reverse();
+                } catch (e) { /* ignore */ }
+            }
+        }
+
+        if (!episodes.length) {
+            episodes.push({
+                name: "Все эпизоды",
+                url: detailUrl,
+                dateUpload: Date.now().toString(),
+                scanlator: null
+            });
+        }
+
         return { name, imageUrl, description, genre, status: 5, episodes };
     }
 
     async getVideoList(url) {
-        const res = await this.client.get(this.absUrl(url), this.headers);
-        const body = res.body;
+        const lines = String(url || "").split("\n").filter(x => x.trim());
         const videos = [];
-        // Direct HLS
-        const hlsRe = /(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/g;
-        const seen = {};
-        let m;
-        while ((m = hlsRe.exec(body)) !== null) {
-            const u = m[1];
-            if (seen[u]) continue;
-            seen[u] = true;
-            videos.push({ url: u, originalUrl: u, quality: "AnimeJoy HLS", headers: this.headers });
+        for (const line of lines) {
+            const idx = line.indexOf("||");
+            if (idx < 0) continue;
+            const providerName = line.substring(0, idx);
+            const fileUrl = line.substring(idx + 2);
+            if (!fileUrl) continue;
+
+            // Kodik iframe
+            if (fileUrl.indexOf("kodikplayer") >= 0) {
+                const kv = await kodikExtract(this.client, fileUrl, this.source.baseUrl, `AnimeJoy · ${providerName}`);
+                for (const v of kv) videos.push(v);
+                continue;
+            }
+
+            // playerjs format: //animejoya.ru/player/playerjs.html?skip=...&file=[1080p]url,[720p]url,[360p]url
+            if (fileUrl.indexOf("playerjs") >= 0 || fileUrl.indexOf("file=[") >= 0) {
+                const fileMatch = fileUrl.match(/file=([^&]+)/);
+                const raw = fileMatch ? decodeURIComponent(fileMatch[1]) : "";
+                const qRe = /\[(\d+p)\]([^,]+)/g;
+                let mq;
+                while ((mq = qRe.exec(raw)) !== null) {
+                    const q = mq[1], u = mq[2].trim();
+                    if (!u) continue;
+                    videos.push({
+                        url: u, originalUrl: u,
+                        quality: `AnimeJoy · ${providerName} ${q}`,
+                        headers: { "User-Agent": AJ_UA, "Referer": this.source.baseUrl + "/" }
+                    });
+                }
+                continue;
+            }
+
+            // Sibnet/VK/Dzen/OK/Mail — plain iframes
+            let src = fileUrl;
+            if (src.startsWith("//")) src = "https:" + src;
+            videos.push({
+                url: src, originalUrl: src,
+                quality: `AnimeJoy · ${providerName}`,
+                headers: { "User-Agent": AJ_UA, "Referer": this.source.baseUrl + "/" }
+            });
         }
-        // MP4
-        const mp4Re = /(https?:\/\/[^"'\s]+\.mp4[^"'\s]*)/g;
-        while ((m = mp4Re.exec(body)) !== null) {
-            const u = m[1];
-            if (seen[u]) continue;
-            seen[u] = true;
-            videos.push({ url: u, originalUrl: u, quality: "AnimeJoy MP4", headers: this.headers });
-        }
+
+        videos.sort((a, b) => {
+            const qa = parseInt((a.quality.match(/(\d+)p/) || [0, 0])[1]);
+            const qb = parseInt((b.quality.match(/(\d+)p/) || [0, 0])[1]);
+            return qb - qa;
+        });
         return videos;
     }
 

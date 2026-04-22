@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animedia.js",
@@ -98,42 +98,79 @@ class DefaultExtension extends MProvider {
         const description = descEl ? descEl.text.trim() : "";
         const genre = doc.select("a[href*='/catalog/genre/'], a[href*='/ghanr/']").map(e => e.text.trim()).filter(x => x);
 
-        // Animedia embeds a Kodik serial iframe that plays all episodes internally.
-        // Expose the page as ONE "episode" — Kodik handles the sub-navigation.
-        const episodes = [{
-            name: "Плеер (все серии)",
-            url: full,
-            dateUpload: Date.now().toString(),
-            scanlator: null
-        }];
+        const body = res.body || "";
+        // Find ALL Kodik serial URLs on the page (each typically = one translation/dub)
+        const re = /\/\/kodikplayer\.com\/(serial|seria)\/(\d+)\/([a-f0-9]+)(?:\/\d+p)?/g;
+        const serialMatches = [];
+        const seen = {};
+        let mm;
+        while ((mm = re.exec(body)) !== null) {
+            const key = `${mm[1]}|${mm[2]}|${mm[3]}`;
+            if (seen[key]) continue;
+            seen[key] = true;
+            serialMatches.push({ type: mm[1], id: mm[2], hash: mm[3] });
+        }
+
+        const episodes = [];
+        if (serialMatches.length && serialMatches[0].type === "serial") {
+            // Enumerate inner episodes of the first serial iframe
+            const primary = serialMatches[0];
+            const serialUrl = `https://kodikplayer.com/serial/${primary.id}/${primary.hash}/720p`;
+            const eps = await kodikFetchSerialEpisodes(this.client, serialUrl, this.source.baseUrl);
+            for (const ep of eps) {
+                // Pack playable (id|hash|label) per episode
+                episodes.push({
+                    name: ep.title,
+                    url: `${ep.id}|${ep.hash}|Animedia · Kodik`,
+                    dateUpload: Date.now().toString(),
+                    scanlator: null
+                });
+            }
+            episodes.reverse();
+        }
+        // Fallback — treat page as single-episode source
+        if (!episodes.length) {
+            episodes.push({
+                name: "Плеер (все серии)",
+                url: full,
+                dateUpload: Date.now().toString(),
+                scanlator: null
+            });
+        }
 
         return { name, imageUrl, description, genre, status: 5, episodes };
     }
 
     async getVideoList(url) {
+        // Per-episode packed URL: "id|hash|label"
+        const parts = String(url).split("|");
+        if (parts.length >= 3 && /^\d+$/.test(parts[0])) {
+            const seriaUrl = `https://kodikplayer.com/seria/${parts[0]}/${parts[1]}/720p`;
+            return await kodikExtract(this.client, seriaUrl, this.source.baseUrl, parts[2] || "Animedia · Kodik");
+        }
+
+        // Fallback: page URL — extract all Kodik iframes + secondary providers
         const res = await this.client.get(this.absUrl(url), this.headers);
         if (res.statusCode !== 200) return [];
         const body = res.body || "";
         const videos = [];
 
-        // 1. Kodik iframes → extract HLS
         const kodikRe = /["'](\/\/kodikplayer\.com\/[^"']+)["']/g;
         const seenKodik = {};
         let m;
         while ((m = kodikRe.exec(body)) !== null) {
-            const url = m[1];
-            if (seenKodik[url]) continue;
-            seenKodik[url] = true;
-            const kodikVids = await kodikExtract(this.client, url, this.source.baseUrl, "Animedia · Kodik");
-            for (const v of kodikVids) videos.push(v);
+            const u = m[1];
+            if (seenKodik[u]) continue;
+            seenKodik[u] = true;
+            const vids = await kodikExtract(this.client, u, this.source.baseUrl, "Animedia · Kodik");
+            for (const v of vids) videos.push(v);
         }
 
-        // 2. Other iframes (aser.pro, etc.) as fallback — keep as-is for Mangayomi's iframe handler
         const otherIframeRe = /<iframe[^>]+(?:data-src|src)="([^"]+)"/g;
         const seen = {};
         while ((m = otherIframeRe.exec(body)) !== null) {
             let src = m[1];
-            if (src.indexOf("kodikplayer") >= 0) continue; // already handled
+            if (src.indexOf("kodikplayer") >= 0) continue;
             if (src.startsWith("//")) src = "https:" + src;
             if (!src.startsWith("http")) continue;
             if (seen[src]) continue;
@@ -149,7 +186,6 @@ class DefaultExtension extends MProvider {
                 headers: { "User-Agent": AD_UA, "Referer": this.source.baseUrl + "/" }
             });
         }
-
         return videos;
     }
 

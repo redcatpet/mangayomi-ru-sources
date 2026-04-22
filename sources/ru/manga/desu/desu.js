@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/desu.js",
@@ -66,7 +66,52 @@ class DefaultExtension extends MProvider {
     async getLatestUpdates(page) { return await this.fetchList("updated", page); }
 
     async search(query, page, filters) {
-        const url = `${this.getApiUrl()}/?limit=20&search=${encodeURIComponent(query || "")}&page=${page}`;
+        let url = `${this.getApiUrl()}/?limit=20&page=${page}`;
+        if (query) url += `&search=${encodeURIComponent(query)}`;
+
+        if (filters && filters.length) {
+            // Filter [0] — order
+            const f0 = filters[0];
+            if (f0 && f0.values) {
+                const idx = (f0.state && f0.state.index != null) ? f0.state.index : 0;
+                const ordVal = f0.values[idx].value;
+                if (ordVal) url += `&order=${ordVal}`;
+            }
+            // Filter [1] — kind (manga/manhwa/manhua/одно-или-многостраничная)
+            const f1 = filters[1];
+            if (f1 && f1.state) {
+                const on = f1.state.filter(x => x.state === true).map(x => x.value);
+                if (on.length) url += `&kinds=${on.join(",")}`;
+            }
+            // Filter [2] — age rating
+            const f2 = filters[2];
+            if (f2 && f2.values) {
+                const idx = (f2.state && f2.state.index != null) ? f2.state.index : 0;
+                const v = f2.values[idx].value;
+                if (v) url += `&age=${v}`;
+            }
+            // Filter [3] — publication status
+            const f3 = filters[3];
+            if (f3 && f3.values) {
+                const idx = (f3.state && f3.state.index != null) ? f3.state.index : 0;
+                const v = f3.values[idx].value;
+                if (v) url += `&status=${v}`;
+            }
+            // Filter [4] — translation status
+            const f4 = filters[4];
+            if (f4 && f4.values) {
+                const idx = (f4.state && f4.state.index != null) ? f4.state.index : 0;
+                const v = f4.values[idx].value;
+                if (v) url += `&trans=${v}`;
+            }
+            // Filter [5] — genres (include)
+            const f5 = filters[5];
+            if (f5 && f5.state) {
+                const on = f5.state.filter(x => x.state === 1 || x.state === true).map(x => x.value);
+                if (on.length) url += `&genres=${on.join(",")}`;
+            }
+        }
+
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseList(res.body);
@@ -117,7 +162,88 @@ class DefaultExtension extends MProvider {
         return pages.map(p => ({ url: p.img, headers: this.headers }));
     }
 
-    getFilterList() { return []; }
+    getFilterList() {
+        return [
+            {
+                type_name: "SelectFilter",
+                type: "order",
+                name: "Сортировка",
+                state: 0,
+                values: [
+                    ["По популярности", "popular"],
+                    ["По обновлению", "updated"],
+                    ["По имени", "name"],
+                    ["По дате добавления", "id"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "kinds",
+                name: "Тип",
+                state: [
+                    ["Манга", "manga"],
+                    ["Манхва", "manhwa"],
+                    ["Маньхуа", "manhua"],
+                    ["One-Shot", "one_shot"],
+                    ["Додзинси", "doujin"]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "age",
+                name: "Возрастной рейтинг",
+                state: 0,
+                values: [
+                    ["Любой", ""],
+                    ["Без ограничений", "no"],
+                    ["13+", "nr13"],
+                    ["16+", "nr16"],
+                    ["18+ (яой/хентай)", "nr18"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "status",
+                name: "Статус выпуска",
+                state: 0,
+                values: [
+                    ["Любой", ""],
+                    ["Онгоинг", "ongoing"],
+                    ["Завершён", "released"],
+                    ["Анонс", "anons"],
+                    ["Заморожен", "copyrighted"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "trans",
+                name: "Статус перевода",
+                state: 0,
+                values: [
+                    ["Любой", ""],
+                    ["Продолжается", "continue"],
+                    ["Завершён", "finished"],
+                    ["Заморожен", "frozen"],
+                    ["Заброшен", "drop"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "genres",
+                name: "Жанры",
+                state: [
+                    ["Сёнен", "shounen"], ["Сёдзё", "shoujo"], ["Сэйнэн", "seinen"], ["Дзёсэй", "josei"],
+                    ["Романтика", "romance"], ["Комедия", "comedy"], ["Драма", "drama"],
+                    ["Фэнтези", "fantasy"], ["Приключения", "adventure"], ["Боевик", "action"],
+                    ["Триллер", "thriller"], ["Ужасы", "horror"], ["Мистика", "mystery"],
+                    ["Школа", "school"], ["Повседневность", "slice of life"], ["Магия", "magic"],
+                    ["Исэкай", "isekai"], ["Гарем", "harem"], ["Экшн", "action"],
+                    ["Психология", "psychological"], ["Научная фантастика", "sci-fi"],
+                    ["Сверхъестественное", "supernatural"], ["Эротика", "ecchi"], ["Яой", "yaoi"], ["Юри", "yuri"]
+                ].map(x => ({ type_name: "CheckBox", name: x[0], value: x[1] }))
+            }
+        ];
+    }
 
     getSourcePreferences() {
         return [{
