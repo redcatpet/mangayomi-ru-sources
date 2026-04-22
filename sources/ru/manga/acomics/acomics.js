@@ -139,7 +139,9 @@ class DefaultExtension extends MProvider {
     async getPageList(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
-        const img = doc.selectFirst("img#mainImage")
+        // Current markup: <img class="issue" src="/upload/!c/..."> with alt like "Выпуск 1"
+        const img = doc.selectFirst("img.issue")
+                 || doc.selectFirst("img#mainImage")
                  || doc.selectFirst("img.issue-image")
                  || doc.selectFirst("div.issue img")
                  || doc.selectFirst("section.issue img");

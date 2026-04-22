@@ -49,12 +49,17 @@ class DefaultExtension extends MProvider {
             status: libParseStatus(info.status && libCoerceString(info.status.label)),
             description: libCoerceString(info.summary || info.description || ""),
             genre: (info.genres || []).map(x => libCoerceString(x && x.name)).filter(Boolean),
-            chapters: chapters.map(c => ({
-                name: `Том ${c.volume} Глава ${c.number}` + (c.name ? `: ${libCoerceString(c.name)}` : ""),
-                url: `${chBase}?number=${c.number}&volume=${c.volume}&branch_id=${(c.branches && c.branches[0] && c.branches[0].branch_id) || ""}`,
-                dateUpload: new Date((c.branches && c.branches[0] && c.branches[0].created_at) || Date.now()).valueOf().toString(),
-                scanlator: (c.branches && c.branches[0] && (c.branches[0].teams || []).map(t => libCoerceString(t && t.name)).filter(Boolean).join(", ")) || null
-            })).reverse()
+            chapters: chapters.map(c => {
+                const branchId = c.branches && c.branches[0] && c.branches[0].branch_id;
+                let url = `${chBase}?number=${c.number}&volume=${c.volume}`;
+                if (branchId) url += `&branch_id=${branchId}`;
+                return {
+                    name: `Том ${c.volume} Глава ${c.number}` + (c.name ? `: ${libCoerceString(c.name)}` : ""),
+                    url,
+                    dateUpload: new Date((c.branches && c.branches[0] && c.branches[0].created_at) || Date.now()).valueOf().toString(),
+                    scanlator: (c.branches && c.branches[0] && (c.branches[0].teams || []).map(t => libCoerceString(t && t.name)).filter(Boolean).join(", ")) || null
+                };
+            }).reverse()
         };
     }
 
