@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -65,22 +65,34 @@ class DefaultExtension extends MProvider {
     }
 
     async getPopular(page) {
-        const url = `${this.source.baseUrl}/search?t=&category=0&type=0&sort=0&atmosphere=0&page=${page}`;
+        // sort=5 = по просмотрам
+        const url = `${this.source.baseUrl}/search?t=&cat=0&type=0&sort=5&atmosphere=0&page=${page}`;
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseBookList(res.body);
     }
 
     async getLatestUpdates(page) {
-        // Sort=1 is "recently updated" on rulate
-        const url = `${this.source.baseUrl}/search?t=&category=0&type=0&sort=1&atmosphere=0&page=${page}`;
+        // sort=4 = по дате последней активности
+        const url = `${this.source.baseUrl}/search?t=&cat=0&type=0&sort=4&atmosphere=0&page=${page}`;
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseBookList(res.body);
     }
 
     async search(query, page, filters) {
-        const url = `${this.source.baseUrl}/search?t=${encodeURIComponent(query || "")}&category=0&type=0&sort=0&atmosphere=0&page=${page}`;
+        let cat = "0", type = "0", atm = "0", sort = "5";
+        if (filters && filters.length) {
+            const fCat = filters[0];
+            if (fCat && fCat.values) cat = fCat.values[fCat.state || 0].value;
+            const fType = filters[1];
+            if (fType && fType.values) type = fType.values[fType.state || 0].value;
+            const fAtm = filters[2];
+            if (fAtm && fAtm.values) atm = fAtm.values[fAtm.state || 0].value;
+            const fSort = filters[3];
+            if (fSort && fSort.values) sort = fSort.values[fSort.state || 0].value;
+        }
+        const url = `${this.source.baseUrl}/search?t=${encodeURIComponent(query || "")}&cat=${cat}&type=${type}&sort=${sort}&atmosphere=${atm}&page=${page}`;
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseBookList(res.body);
@@ -166,6 +178,67 @@ class DefaultExtension extends MProvider {
         return [await this.getHtmlContent("", url)];
     }
 
-    getFilterList() { return []; }
+    getFilterList() {
+        const categories = [
+            ["— Любая —", "0"],
+            ["Книги", "2"],
+            ["Новеллы и ранобэ", "12"],
+            ["Китайские", "5"],
+            ["Корейские", "7"],
+            ["Японские", "6"],
+            ["Английские", "28"],
+            ["Авторские", "18"],
+            ["Авторские фанфики", "51"],
+            ["Переводы фанфиков", "19"],
+            ["Все бесплатные книги", "58"],
+            ["Манга", "30"],
+            ["Манга — для взрослых", "59"],
+            ["AI переводы вебновелл", "44"],
+            ["Игры", "3"],
+            ["Визуальные новеллы", "8"]
+        ];
+        const types = [
+            ["— Любой —", "0"],
+            ["Только переводы", "1"],
+            ["Только авторские", "2"]
+        ];
+        const atmospheres = [
+            ["— Любая —", "0"],
+            ["Позитивная", "1"],
+            ["Dark", "2"]
+        ];
+        const sorts = [
+            ["По просмотрам", "5"],
+            ["По рейтингу", "6"],
+            ["По дате последней активности", "4"],
+            ["По дате создания", "3"],
+            ["По кол-ву переведённых глав", "7"],
+            ["По кол-ву лайков", "8"],
+            ["По кол-ву бесплатных глав", "11"],
+            ["По степени готовности", "0"],
+            ["По релевантности", "-1"],
+            ["По названию (оригинал)", "1"],
+            ["По названию (перевод)", "2"],
+            ["Случайно", "9"]
+        ];
+        return [
+            {
+                type_name: "SelectFilter", type: "category", name: "Категория", state: 0,
+                values: categories.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter", type: "type", name: "Тип", state: 0,
+                values: types.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter", type: "atmosphere", name: "Атмосфера", state: 0,
+                values: atmospheres.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter", type: "sort", name: "Сортировка", state: 0,
+                values: sorts.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            }
+        ];
+    }
     getSourcePreferences() { return []; }
 }
