@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.3",
+    "version": "0.3.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -140,7 +140,32 @@ class DefaultExtension extends MProvider {
         };
     }
 
+    async resolveStaleChapterUrl(url) {
+        // Pre-v0.3 of this extension stored chapter URLs as
+        // `${apiUrl}/ranobe/{ranobeId}/chapters/{chapterId}` — that JSON endpoint now 404s.
+        // Mangayomi caches chapter URLs in its local DB and won't refresh them on getDetail
+        // unless the user removes & re-adds the title. Rescue: detect the broken pattern,
+        // resolve the chapter ID against the contents API, and fall through to the
+        // canonical HTML URL.
+        const m = url && url.match && url.match(/\/api\/ranobe\/(\d+)\/chapters\/(\d+)/);
+        if (!m) return url;
+        const ranobeId = m[1];
+        const chapterId = m[2];
+        try {
+            const res = await this.client.get(`${this.source.apiUrl}/ranobe/${ranobeId}/contents`, this.headers);
+            if (res.statusCode !== 200) return url;
+            const data = JSON.parse(res.body);
+            for (const vol of (data.volumes || [])) {
+                for (const ch of (vol.chapters || [])) {
+                    if (String(ch.id) === chapterId && ch.url) return ch.url;
+                }
+            }
+        } catch (e) {}
+        return url;
+    }
+
     async getHtmlContent(name, url) {
+        url = await this.resolveStaleChapterUrl(url);
         // Object.assign instead of spread — flutter_qjs supports both, but spread on
         // a getter property has burned us before, and explicit copy is unambiguous.
         const headers = Object.assign({}, this.headers, {
