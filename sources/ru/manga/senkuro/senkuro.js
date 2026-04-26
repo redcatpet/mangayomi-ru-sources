@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.2.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -29,12 +29,22 @@ const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: S
 }`;
 
 // Manga detail by slug. Branch has `primaryTeamActivities` (NOT a direct `team` field).
+// description is a TiptapNodeUnion tree — request key node types as inline fragments.
 const Q_MANGA = `query fetchManga($slug: String!) {
   manga(slug: $slug) {
     id slug type status rating score views chapters
     originalName { lang content }
     titles { lang content }
     alternativeNames { lang content }
+    localizations {
+      lang
+      description {
+        __typename
+        ... on TiptapNodeText { text }
+        ... on TiptapNodeNestedBlock { content { __typename ... on TiptapNodeText { text } } }
+        ... on TiptapNodeHeading { content { __typename ... on TiptapNodeText { text } } }
+      }
+    }
     labels { id slug titles { lang content } }
     mainStaff { roles person { name } }
     cover { main: resize(width: 600, height: 850, format: WEBP) { url } }
@@ -110,6 +120,26 @@ class DefaultExtension extends MProvider {
             if (j.errors) return { error: (j.errors[0] && j.errors[0].message) || "graphql error" };
             return { data: j.data };
         } catch (e) { return { error: "parse error: " + (res.body || "").slice(0, 200) }; }
+    }
+
+    // Walk a Tiptap rich-text tree and concatenate plain text content.
+    // Senkuro returns description as an array of nodes (paragraphs/headings/text).
+    tiptapToText(nodes) {
+        if (!nodes) return "";
+        const arr = Array.isArray(nodes) ? nodes : [nodes];
+        const out = [];
+        for (const n of arr) {
+            if (!n) continue;
+            if (n.__typename === "TiptapNodeText" && n.text) {
+                out.push(n.text);
+                continue;
+            }
+            if (n.content && Array.isArray(n.content)) {
+                const inner = this.tiptapToText(n.content);
+                if (inner) out.push(inner);
+            }
+        }
+        return out.join("\n").trim();
     }
 
     pickTitle(titles, originalName) {
@@ -213,7 +243,20 @@ class DefaultExtension extends MProvider {
         const m = r.data.manga;
         const name = this.pickTitle(m.titles, m.originalName);
         const altNames = (m.alternativeNames || []).map(a => a.content).filter(Boolean);
-        const description = altNames.length ? `Альт. названия: ${altNames.join(" / ")}` : "";
+
+        // Description from localizations[].description (Tiptap tree → plain text).
+        // Prefer Russian, fall back to English.
+        let descriptionText = "";
+        const locs = m.localizations || [];
+        const ruLoc = locs.find(l => l && l.lang === "RU" && l.description);
+        const enLoc = locs.find(l => l && l.lang === "EN" && l.description);
+        const desc = ruLoc || enLoc;
+        if (desc && desc.description) descriptionText = this.tiptapToText(desc.description);
+        if (altNames.length) {
+            const prefix = `Альт. названия: ${altNames.join(" / ")}`;
+            descriptionText = descriptionText ? `${prefix}\n\n${descriptionText}` : prefix;
+        }
+
         const genre = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
         const author = (m.mainStaff || []).map(s => s.person && s.person.name).filter(Boolean).join(", ");
         const status = this.parseStatus(m.status);
@@ -267,7 +310,7 @@ class DefaultExtension extends MProvider {
         return {
             name: name || slug,
             imageUrl: this.coverUrl(m.cover),
-            description,
+            description: descriptionText,
             author,
             genre,
             status,
