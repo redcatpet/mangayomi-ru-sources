@@ -1,18 +1,18 @@
 const mangayomiSources = [{
-    "name": "Senkuro",
+    "name": "Senkognito",
     "lang": "ru",
-    "baseUrl": "https://senkuro.com",
-    "apiUrl": "https://api.senkuro.com/graphql",
+    "baseUrl": "https://senkognito.com",
+    "apiUrl": "https://api.senkognito.com/graphql",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 0,
-    "isNsfw": false,
+    "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.2.2",
+    "version": "0.1.0",
     "dateFormat": "",
     "dateFormatLocale": "",
-    "pkgPath": "ru/manga/senkuro.js",
-    "notes": "GraphQL API api.senkuro.com/graphql. Сайт может требовать сессию для не-PG контента — вставь cookie из DevTools → Application → Cookies на senkuro.com (поле session_cookie). Геоблок для не-RU IP. Для NSFW-контента используй sister-site Senkognito (отдельный источник в репо)."
+    "pkgPath": "ru/manga/senkognito.js",
+    "notes": "NSFW-сестра Senkuro. GraphQL API api.senkognito.com/graphql. Для скрытого 18+ контента нужна авторизация — вставь cookie из senkognito.com → DevTools → Application → Cookies (поле session_cookie). Геоблок для не-RU IP."
 }];
 
 const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";

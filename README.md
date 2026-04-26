@@ -1,8 +1,8 @@
 # Mangayomi RU Sources
 
-Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **29 русских источников** манги, аниме и новелл.
+Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **30 русских источников** манги, аниме и новелл.
 
-Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, AniLib/MangaLib (новые .org-домены), Animesss, YummyAnime, Anixart, Ранобэ.рф, Senkuro/Shiruho и др.
+Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, AniLib/MangaLib (новые .org-домены), Animesss, YummyAnime, Anixart, Ранобэ.рф, Senkuro/Senkognito/Shiruho и др.
 
 > ⚠ **Большинство сайтов гео-блочат не-RU IP** или возвращают 403/заглушку для незалогиненных пользователей. Для полной работы расширений ожидается российский IP, иногда — Bearer token / cookie из вашей сессии (см. инструкции ниже).
 
@@ -14,8 +14,8 @@
 
 | Что подключить | URL |
 |---|---|
-| **Всё (29 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
-| Только манга (11) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
+| **Всё (30 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
+| Только манга (12) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
 | Только аниме (12) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
 | Только новеллы (6) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
 
@@ -25,7 +25,7 @@
 
 ---
 
-## Реальный статус (v0.8.2, проверено через E2E с фактической загрузкой контента)
+## Реальный статус (v0.8.3, проверено через E2E с фактической загрузкой контента)
 
 E2E-харнес (`_scratch/e2e_real.js`) для каждого источника:
 1. Запрашивает `getPopular` — должен вернуть список
@@ -33,16 +33,20 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 3. **Реально fetch'ит первую страницу/видео** и проверяет MIME (image/*, m3u8, mp4, html >800B)
 4. Если контент — заглушка (deleted1.png, censored stub, pixel.png) — это FAIL
 
-**Итог: 23/29 источников отдают реальный контент с EU IP** (с RU IP больше — гео-блоки снимаются).
+**Итог: 24/30 источников отдают реальный контент с EU IP** (с RU IP больше — гео-блоки снимаются).
 
 ### ✅ Полностью работают (отдают реальный контент):
 
-**Аниме (11):** AniLibria · Animedia · AnimeGO · AnimeJoy · AniLib · Animeshka · **Animesss** · AnimeVost · Anixart · **Shiruho** ⭐ · **YummyAnime**
+**Аниме (11):** AniLibria · Animedia · AnimeGO · AnimeJoy · AniLib · Animeshka · **Animesss** · AnimeVost · Anixart · **Shiruho** · **YummyAnime**
 
-**Манга (7):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga · **Senkuro**
+**Манга (8):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga · **Senkognito** ⭐ · **Senkuro**
 
 **Новеллы (5):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф · Tl.Rulate
 
+> **v0.8.3**: добавлен **Senkognito** (NSFW-сестра Senkuro). Тот же GraphQL-стек на `api.senkognito.com/graphql`. Для скрытого 18+ контента может потребоваться cookie из senkognito.com.
+>
+> ⚠ **Важно про кэш**: Mangayomi кэширует детали тайтла локально. После апдейта v0.8.2/0.8.3 описания у уже добавленных тайтлов (Senkuro/Shiruho) **не обновятся автоматически** — нужно либо удалить тайтл из библиотеки и добавить заново, либо нажать кнопку «обновить детали» в карточке тайтла.
+>
 > **v0.8.2**: добавлен **Shiruho** (anime, sister-site Senkuro). GraphQL API `api.shiruho.com/graphql` — каталог + детали + эпизоды с многодабовыми озвучками (Kodik HLS через extractor + Sibnet/VK/MyVi/YouTube как iframe). Также пофикшено описание в **Senkuro** (теперь парсит Tiptap rich-text вместо показа альт-названий).
 >
 > **v0.8.1**: пофикшено воспроизведение видео в **Anixart** (Kodik HLS-URL с двоеточиями `/720.mp4:hls:...` ломали libmpv → добавлен iframe-fallback в kodik_extractor). Senkuro каталог получил диагностику ошибок (раньше показывал "0 results" вместо HTTP-кода).
