@@ -2,114 +2,112 @@
 
 Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **28 русских источников** манги, аниме и новелл.
 
-Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, Jut.su, AniLibria (новый API), Ранобэ.рф и др.
+Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, AniLib/MangaLib (новые .org-домены), Animesss, YummyAnime, Anixart, Ранобэ.рф и др.
 
-> ⚠ Большинство источников заблокированы в РФ — для корректной работы ожидается либо российский IP, либо VPN. Аутентичные зеркала перечислены ниже + можно переопределить `baseUrl` через настройки источника.
+> ⚠ **Большинство сайтов гео-блочат не-RU IP** или возвращают 403/заглушку для незалогиненных пользователей. Для полной работы расширений ожидается российский IP, иногда — Bearer token / cookie из вашей сессии (см. инструкции ниже).
 
 ---
 
-## Добавить в приложение
+## Установка
 
-Открой Mangayomi → **Больше → Расширения → кнопка импорта репо** → вставь URL:
+В Mangayomi → **Больше → Расширения → 🔄 импорт репозитория** → URL:
 
 | Что подключить | URL |
 |---|---|
 | **Всё (28 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
-| Только манга (12) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
-| Только аниме (9) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
+| Только манга (10) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
+| Только аниме (11) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
 | Только новеллы (7) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
 
-После импорта включи нужные источники в списке.
+После импорта включи нужные источники.
+
+> **Важно**: после крупного апдейта репо **переимпортируй** его (удали → добавь заново), иначе в установленных останутся obsolete-источники с устаревшими доменами/API.
 
 ---
 
-## Статус каждого источника
+## Реальный статус (v0.7.1, проверено через E2E с фактической загрузкой контента)
 
-Версия `0.3.0` — крупный рефакторинг: все источники расширяют `MProvider` напрямую (убраны промежуточные базовые классы — Mangayomi's QuickJS не всегда корректно обрабатывал многоуровневое наследование). Плюс исправлены site_id в Lib-семействе, актуализированы пути каталогов у Acomics/Author.Today/Jaomix/Ранобэ.рф и удалены мёртвые домены (shiz.cc, novel-tl.com).
+E2E-харнес (`_scratch/e2e_real.js`) для каждого источника:
+1. Запрашивает `getPopular` — должен вернуть список
+2. Берёт первый тайтл, вызывает `getDetail` — должен вернуть главы/эпизоды
+3. **Реально fetch'ит первую страницу/видео** и проверяет MIME (image/*, m3u8, mp4, html >800B)
+4. Если контент — заглушка (deleted1.png, censored stub, pixel.png) — это FAIL
 
-### Манга (12)
+### ✅ Полностью работают (отдают реальный контент):
 
-| Источник | Домен по умолчанию | Статус | Ограничения |
-|---|---|---|---|
-| **ReadManga** | `3.readmanga.ru` | ✅ Selectors выверены по Aidoku | — |
-| **MintManga** | `2.mintmanga.one` | ✅ Selectors выверены по Aidoku | — |
-| **SelfManga** | `1.selfmanga.live` | ✅ Подтверждено живыми probes | — |
-| **AllHentai** | `20.allhen.online` | ⚠ 18+ | Домен меняется — при DNS fail поменяй в настройках |
-| **Desu.Me** | `desu.uno` (desu.me/desu.city редиректят сюда) | ✅ API `/manga/api` | Иногда Cloudflare |
-| **MangaLib** | `mangalib.me` (API `api.cdnlibs.org/api`, site_id=1) | ✅ Fixed covers через weserv-proxy | Для 18+ нужен Bearer token |
-| **YaoiLib** | `yaoilib.me` (site_id=6) | ✅ 18+ BL | Bearer token для взрослого |
-| **HentaiLib** | `hentailib.me` (site_id=4) | ✅ 18+ | Почти весь контент за токеном |
-| **Remanga** | `remanga.org` (API v2) | ✅ Переписано на api.remanga.org/api/v2/ | Bearer token для платного |
-| **NewManga** | `newmanga.org` | 🔧 MVP | API может меняться |
-| **MangaBuff** | `mangabuff.ru` | ✅ Selectors выверены по Aidoku | — |
-| **Acomics** | `acomics.ru` | 🔧 MVP | Русские веб-комиксы |
+**Аниме (10):** AniLibria · Animedia · AnimeGO · AnimeJoy · AniLib · Animeshka · **Animesss** · AnimeVost · Anixart · **YummyAnime**
 
-### Аниме (9)
+**Манга (6):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga
 
-| Источник | Домен | Статус видео | Примечания |
-|---|---|---|---|
-| **AniLibria** | `anilibria.top` (API `api.anilibria.app/api/v1`) | ✅ Работает HLS | Новый API v1, старый v2/v3 отключён |
-| **Jut.Su** | `jut.su` | ⚠ Каталог/эпизоды — ✅ (cp1251 декодер); видео — ❌ | `<source>` теги на пустом pixel.png, реальный URL подгружает JS. Смотри через кнопку Webview |
-| **AnimeVost** | `animevost.org` (API v1) | ✅ MP4 480p/720p | Работает полноценно |
-| **AnimeGO** | `animego.me` | ⚠ Каталог ✅, видео — только iframe | Видео через Kodik iframe, без полной экстракции HLS |
-| **AniLib** | `anilib.me` (API `api.cdnlibs.org/api`, site_id=5) | ⚠ Базовый extractor | Плееры Kodik/Sibnet/Libria |
-| **Animedia** | `amd.online` | 🔧 MVP | .tv/.my мёртвые — переехали на amd.online |
-| **Sovetromantica** | `sovetromantica.com` | ❌ Каталог через JS | Смотри через Webview |
-| **AnimeJoy** | `animejoy.ru` | ⚠ Каталог ✅, эпизоды стаб | Полные эпизоды через AJAX — WIP |
-| **Animeshka** | `animeshka.net` | 🔧 MVP | `.com` умер, переехали на `.net` |
+**Новеллы (4):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф
 
-> Удалены как мёртвые домены: **Shiz.cc**, **Novel-Tl**.
+### ⚠ Частично работают (нужен токен / cookie / RU IP)
 
-### Новеллы (7)
+| Источник | Что нужно | Где взять |
+|---|---|---|
+| **MangaLib / AniLib / HentaiLib** | Bearer token для 18+ и Pro-глав | `mangalib.org` / `animelib.org` / `hentailib.me` → DevTools → Network → любой XHR к API → `Authorization: Bearer ...` (см. ниже) |
+| **MintManga / AllHentai** | Session cookie (без неё сервер шлёт `deleted1.png`) | Сайт → DevTools → Application → Cookies → копируй ВЕСЬ cookie-string после логина |
+| **Author.Today** | Session cookie | то же самое — без неё текст глав AES-зашифрован |
+| **Litnet** | Session cookie | без неё CF блочит каталог |
+| **Tl.Rulate** | Логин для платных глав; бесплатные читаются без токена | — |
 
-| Источник | Домен | Чтение глав | Примечания |
-|---|---|---|---|
-| **Tl.Rulate** | `tl.rulate.ru` | ✅ `getHtmlContent` добавлен | Бесплатные главы, платные требуют вход на сайте |
-| **Author.Today** | `author.today` | ⚠ Требует session cookie | Текст AES-зашифрован, без cookie только каталог |
-| **RanobeLib** | `ranobelib.me` (lib API, site_id=3) | ✅ ProseMirror → HTML конвертер | Bearer token для платного |
-| **Ранобэ.рф** | `ранобэ.рф` (punycode) | ✅ v3 API + Next.js data | — |
-| **Jaomix** | `jaomix.ru` | ✅ WordPress | — |
-| **RanobeHub** | `ranobehub.org` | ✅ JSON API | — |
-| **Litnet** | `litnet.com` | ⚠ Требует session cookie | Только бесплатные книги без подписки |
+### ❌ Известные не-фиксы
+
+- **Jut.Su видео** — сайт отдаёт `<source src="pixel.png">` и подгружает реальный URL JS-функцией с проверкой referer/cookie. Без полноценного JS-engine не вытащить. Каталог + список эпизодов работают; смотри в браузере или через WebView в Mangayomi.
+- **Sovetromantica** — был удалён в v0.5; каталог рендерится JS, в HTML пусто.
+- **NewManga** — был удалён в v0.5; стал Vue SPA с auth-locked API без публичных endpoints.
 
 ---
 
-## Настройки источников
+## Как получить Bearer token (для Lib-семейства)
 
-Многие источники имеют настраиваемые поля (**Источник → Настройки → "⚙ "**):
+1. Открой **mangalib.org** / **animelib.org** / **hentailib.me** в Chrome
+2. Залогинься (без аккаунта — токена не будет)
+3. F12 → вкладка **Network**
+4. Открой ЛЮБУЮ мангу/аниме (или просто обнови страницу)
+5. В списке запросов найди XHR к `api.cdnlibs.org` или `api2.mangalib.me` или `hapi.hentaicdn.org` или `api.animelib.org` (зависит от сайта)
+6. Кликни на запрос → вкладка **Headers** → **Request Headers** → найди `Authorization: Bearer eyJ0eXAi…`
+7. Скопируй **всё после слова `Bearer ` (без самого слова Bearer)** — это длинная JWT-строка из 200+ символов
+8. В Mangayomi: тыкни на источник → ⚙ Settings → "Auth token (Bearer)" → вставь
 
-- **Grouple-семейство** (ReadManga/MintManga/SelfManga/AllHentai) — поле `Переопределить baseUrl`. Если домен заблокирован, вставь актуальный mirror. Список известных зеркал:
-  - ReadManga: `3.readmanga.ru`, `web.usagi.one`, `readmanga.io`
-  - MintManga: `2.mintmanga.one`, `seimanga.me`
-  - SelfManga: `1.selfmanga.live`
-  - AllHentai: `20.allhen.online`, `allhentai.ru` (номер меняется)
-- **Lib-семейство** (MangaLib/YaoiLib/HentaiLib/AnimeLib/Ranobelib) — поле `Bearer token`. Взять в DevTools → Network → любой запрос к `api.cdnlibs.org` → заголовок `Authorization`. Плюс выбор сервера изображений.
-- **Remanga** — Bearer token для 18+.
-- **Author.Today / Litnet** — `Session cookie`. Скопируй строку cookie из DevTools → Application → Cookies после логина.
-- **Desu** — поле для альтернативного domain.
+> **Важно**: токен **выдаётся отдельно для каждого Lib-сайта**. Токен с mangalib.org НЕ подойдёт для animelib.org — API ответит HTTP 422 "audience mismatch". В таком случае с v0.7.1 расширение автоматически отбросит токен и попробует без авторизации (для публичного контента это работает; платный контент не загрузится).
 
 ---
 
-## Известные ограничения и почему
+## Как получить session cookie (для Grouple / Author.Today / Litnet)
 
-### Видео плеера
-| Сайт | Ситуация |
+1. Открой **2.mintmanga.one** / **20.allhen.online** / **author.today** / **litnet.com**
+2. Залогинься (можно бесплатным аккаунтом)
+3. F12 → вкладка **Application** → раздел **Cookies** → выбрать домен сайта
+4. Скопируй ВСЕ cookies в одну строку формата `key1=value1; key2=value2; key3=value3`
+5. В Mangayomi: источник → ⚙ Settings → "Session cookie" → вставь
+
+---
+
+## Настройки источников (overview)
+
+| Группа | Доступные настройки |
 |---|---|
-| AniLibria | ✅ Прямой HLS в API (работает) |
-| AnimeVost | ✅ Прямые mp4 (работает) |
-| Jut.Su | ❌ Сайт отдаёт плейсхолдер-пиксель в `<source>`, реальный URL ставится JS'ом после проверки referer+cookie. Без JS-движка не вытащить |
-| AnimeGO / Shiz / Animeshka | ⚠ Kodik iframe — Mangayomi не всегда проигрывает. Полноценный Kodik-extractor (`gvi` + декодирование base64) не написан |
-| AniLib | ⚠ Плееры отдаются через `/api/episodes/{id}` — базовый extractor работает, полноценное кодирование серверов не реализовано |
+| **Grouple** (ReadManga/MintManga/SelfManga/AllHentai) | `Override baseUrl` (если домен заблокирован) + `Session cookie` (для 18+ и DMCA-блокированных глав) |
+| **Lib** (MangaLib/HentaiLib/AniLib/RanobeLib) | `Image server` (5 вариантов CDN) + `Auth token (Bearer)` |
+| **Remanga** | Bearer token для платного |
+| **Desu** | `Override baseUrl` (`desu.uno`/`desu.city`/`desu.me` редиректят) |
+| **AniLibria** | `Default quality` (480p / **720p** / 1080p) |
+| **Author.Today / Litnet** | `Session cookie` |
+| **Все источники** | Кнопка "🔍 Filter" в каталоге для жанров/статусов/типов (если поддерживается) |
 
-### Текст новелл
-- **Author.Today** шифрует текст AES'ом с ключом, привязанным к сессии — без cookie видишь заглушку.
-- **Litnet** — платная подписочная модель, без cookie сессии нельзя читать платные книги.
-- **Lib-family** (Ranobelib) — часть переводов за Bearer токеном.
+---
 
-### Сами сайты
-- **Большинство .ru доменов геоблочат** запросы из-за рубежа → для сборки с не-RU IP смотришь "0 результатов" или 403. **На твоём iPhone/компе с российским IP работать должно.**
-- **Sovetromantica** — каталог рендерится JS, не отдаётся в HTML. Смотри через Webview-кнопку.
-- **Shiz.cc / Animeshka** — домены мёртвые. Найди актуальные через Telegram-каналы и поменяй в настройках.
+## Фильтры
+
+С v0.6 у большинства источников появилась кнопка **🔍 фильтр** над каталогом — там жанры (TriState: тап = включить, два тапа = исключить), статусы, типы, сортировка. Поддерживают:
+
+- **Remanga** — 34 жанра + 5 статусов + 7 типов + возраст + 5 сортировок
+- **Grouple** (ReadManga/MintManga/SelfManga/AllHentai) — 40 жанров + 5 сортировок + 7 advanced-флагов
+- **Lib** (MangaLib/HentaiLib/RanobeLib/AniLib) — 50 жанров TriState + статусы + типы + 9 ключей сортировки
+- **AnimeGO** — path-routing genre/status/type
+- **Anixart** — 38 жанров TriState + 6 сортировок + статус + категория (TV/Movie/OVA/...)
+- **Desu.Me** — 25 жанров + статус/тип/возраст
 
 ---
 
@@ -118,71 +116,85 @@
 ### Структура
 
 ```
-lib/                    Базовые классы (конкатенируются с source):
-  grouple_base.js       ReadManga/MintManga/SelfManga/AllHentai
-  lib_family_base.js    MangaLib/YaoiLib/HentaiLib/AniLib/RanobeLib
+lib/
+  grouple_base.js       Helpers для ReadManga/MintManga/SelfManga/AllHentai
+  lib_family_base.js    Helpers для MangaLib/HentaiLib/AniLib/RanobeLib
+  kodik_extractor.js    Универсальный Kodik iframe → HLS extractor
+                        (используют animego, animelib, animedia, anixart,
+                         animesss, yummyanime)
 
 sources/ru/
   manga/<name>/<name>.js
   anime/<name>/<name>.js
   novel/<name>/<name>.js
 
-icons/                  PNG-иконки всех 30 источников
+icons/                  PNG-иконки источников (128×128)
 dist/                   Собранные .js + index.json (генерируется build.py)
 
-build.py                Сборщик (lib + source → dist, генерит index.json)
-smoke_test.py           Проверка селекторов на живом HTML
-RESEARCH.md             Исследование 30 сайтов (Phase 0)
+build.py                Сборщик: lib + source → dist, генерит index.json
+                        REPO_BASE_URL env override для CI
+
+_scratch/
+  eval_check.js         Проверка что каждый собранный JS парсится в QuickJS-mode
+  e2e_real.js           Полный E2E: реально fetch'ит контент и
+                        валидирует MIME (вылавливает заглушки и
+                        неработающие endpoints)
+  e2e_test.js           Старый E2E (без проверки контента)
+
 .github/workflows/pages.yml   Автодеплой на GitHub Pages
 ```
 
-### Локальная сборка
+### Локальная сборка + проверка
 
 ```bash
-python build.py
+python build.py                          # ← собирает dist/
+node _scratch/eval_check.js              # ← парсит каждый dist/*.js
+node _scratch/e2e_real.js                # ← честный E2E с fetch контента
+node _scratch/e2e_real.js MangaLib       # ← один источник
 ```
 
-Читает `sources/**/*.js`, резолвит `// @include: X` директивы (подгружая `lib/X.js`), пишет в `dist/ru/{тип}/{имя}.js`, обновляет `index.json` и 3 per-type индекса.
-
-### Smoke-тест парсеров
-
-```bash
-pip install beautifulsoup4
-python smoke_test.py
-```
-
-### API, которое реализует `DefaultExtension extends MProvider`
+### API расширения
 
 | Метод | Для | Возвращает |
 |---|---|---|
-| `getPopular(page)` | все | `{list, hasNextPage}` |
-| `getLatestUpdates(page)` | все | `{list, hasNextPage}` |
-| `search(query, page, filters)` | все | `{list, hasNextPage}` |
+| `getPopular(page)` | все | `{list: [{name, imageUrl, link}], hasNextPage}` |
+| `getLatestUpdates(page)` | все | то же |
+| `search(query, page, filters)` | все | то же |
 | `getDetail(url)` | все | `{name, imageUrl, description, author, genre, status, chapters/episodes}` |
 | `getPageList(url)` | манга | `[{url, headers}]` |
 | `getVideoList(url)` | аниме | `[{url, originalUrl, quality, headers}]` |
-| `getHtmlContent(name, url)` | **новеллы** | HTML-строка с текстом главы |
+| `getHtmlContent(name, url)` | новеллы | HTML-строка |
 | `getFilterList()` | все | `[FilterObject]` |
 | `getSourcePreferences()` | все | `[PreferenceObject]` |
 
-Подробности: [Mangayomi CONTRIBUTING-JS.md](https://github.com/kodjodevf/mangayomi-extensions/blob/main/CONTRIBUTING-JS.md).
+Полный контракт: [Mangayomi CONTRIBUTING-JS.md](https://github.com/kodjodevf/mangayomi-extensions/blob/main/CONTRIBUTING-JS.md)
+
+### Важная техническая особенность
+
+Mangayomi использует `flutter_qjs` (QuickJS), который **не обрабатывает корректно многоуровневое наследование классов**. Все `DefaultExtension` ОБЯЗАНЫ extend `MProvider` напрямую, а не через промежуточный базовый класс. Из-за этого `lib/grouple_base.js` и `lib/lib_family_base.js` экспортируют только функции (`groupleParseList`, `libGetPopular`, …), а не базовый класс. Конкатенация делается build-системой через `// @include: <libname>` директиву.
 
 ---
 
 ## Благодарности
 
-Структура URL и CSS-селекторов для ReadManga/MintManga/SelfManga/MangaBuff/Desu/Remanga/MangaOneLove выверена по **Aidoku Community Sources** (Skittyblock, SolsticeLeaf) — тамошние Rust-реализации служили эталоном для правильных endpoints'ов.
+- **Aidoku Community Sources** (Skittyblock, SolsticeLeaf) — Rust-реализации послужили эталоном для ReadManga/MangaBuff/Desu/Remanga endpoints.
+- **m2k3a/mangayomi-extensions** — extractor pack (filemoon, dood, mixdrop, okru, vidGuard) — изучен как референс.
+- **shikicinema, Shikiplayer** — открытые расширения Shikimori с интеграцией Kodik/AniLibria/community-видео API.
 
+Источники:
 - https://github.com/Skittyblock/aidoku-community-sources
 - https://github.com/SolsticeLeaf/aidoku-ru-sources
+- https://github.com/m2k3a/mangayomi-extensions
+- https://github.com/Smarthard/shikicinema
+- https://github.com/qt-kaneko/Shikiplayer
 
 ---
 
 ## Отчёт о проблемах
 
-Баги / сломанный источник → [Issues](https://github.com/redcatpet/mangayomi-ru-sources/issues) со скриншотом ошибки.
+Баги — [Issues](https://github.com/redcatpet/mangayomi-ru-sources/issues) со скриншотом + примечанием какой источник + какой шаг ломается.
 
-Быстрый фикс домена — **Source → Settings → `Переопределить baseUrl`** (где поддерживается).
+Быстрый фикс домена — **Source → Settings → `Override baseUrl`** (где поддерживается).
 
 ---
 
