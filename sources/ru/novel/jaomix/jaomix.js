@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.2",
+    "version": "0.3.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/jaomix.js",
@@ -36,6 +36,15 @@ class DefaultExtension extends MProvider {
         if (u.startsWith("http")) return u;
         if (u.startsWith("//")) return "https:" + u;
         return this.source.baseUrl + (u.startsWith("/") ? u : "/" + u);
+    }
+
+    // WordPress generates resized thumbnails like `name-150x150.jpg`. The full-size
+    // original lives at the same path minus the size suffix. Catalog cards link to
+    // the 150x150 thumbnail which Mangayomi caches as the title's cover — making the
+    // cover look pixelated in the detail view. Strip the suffix to upgrade to full-res.
+    upgradeCoverUrl(u) {
+        if (!u) return u;
+        return u.replace(/-\d+x\d+(\.(jpe?g|png|webp|gif|avif))(\?.*)?$/i, "$1$3");
     }
 
     isSystemHref(href) {
@@ -68,7 +77,7 @@ class DefaultExtension extends MProvider {
             let imageUrl = "";
             if (img) {
                 imageUrl = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("src") || "";
-                imageUrl = this.absUrl(imageUrl);
+                imageUrl = this.upgradeCoverUrl(this.absUrl(imageUrl));
             }
             const titleEl = card.selectFirst("h3 a, h2 a") || linkEl;
             const name = (titleEl.attr("title") || titleEl.text || "").trim();
@@ -86,7 +95,7 @@ class DefaultExtension extends MProvider {
                 let imageUrl = "";
                 if (img) {
                     imageUrl = img.attr("data-src") || img.attr("data-lazy-src") || img.attr("src") || "";
-                    imageUrl = this.absUrl(imageUrl);
+                    imageUrl = this.upgradeCoverUrl(this.absUrl(imageUrl));
                 }
                 const titleEl = card.selectFirst("h3 a, h2 a, .entry-title a") || linkEl;
                 const name = (titleEl.attr("title") || titleEl.text || "").trim();
@@ -104,7 +113,7 @@ class DefaultExtension extends MProvider {
                 // Try to find image in surrounding markup
                 let imageUrl = "";
                 const aImg = a.selectFirst("img");
-                if (aImg) imageUrl = this.absUrl(aImg.attr("data-src") || aImg.attr("src") || "");
+                if (aImg) imageUrl = this.upgradeCoverUrl(this.absUrl(aImg.attr("data-src") || aImg.attr("src") || ""));
                 this.pushCard(list, seen, href, name, imageUrl);
             }
         }
@@ -144,12 +153,12 @@ class DefaultExtension extends MProvider {
         // div.img-book/div.thumb-book that the user reported as "shakal quality".
         let imageUrl = "";
         const og = doc.selectFirst("meta[property='og:image']");
-        if (og) imageUrl = this.absUrl(og.attr("content") || "");
+        if (og) imageUrl = this.upgradeCoverUrl(this.absUrl(og.attr("content") || ""));
         if (!imageUrl) {
             const imgEl = doc.selectFirst("div.img-book img")
                        || doc.selectFirst("div.thumb-book img")
                        || doc.selectFirst("article img");
-            if (imgEl) imageUrl = this.absUrl(imgEl.attr("data-src") || imgEl.attr("src") || "");
+            if (imgEl) imageUrl = this.upgradeCoverUrl(this.absUrl(imgEl.attr("data-src") || imgEl.attr("src") || ""));
         }
 
         // Description — schema.org `itemprop=description` is the actual selector on
