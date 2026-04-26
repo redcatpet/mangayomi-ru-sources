@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.2.1",
+    "version": "0.2.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
@@ -31,6 +31,27 @@ const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: S
   mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search, rating: $rating) {
     edges { node { id slug type rating titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+// Top-level multi-entity search. Indexes every title localization (Cyrillic, Latin,
+// Japanese) — unlike `mangas(search:)` which only matches against `originalName`.
+// Returned as `SearchManga` inline-fragment nodes; we filter NSFW client-side via
+// `mangaRating`.
+const Q_SEARCH = `query search($query: String!, $first: Int = 50) {
+  search(query: $query, type: MANGA, first: $first) {
+    edges {
+      node {
+        __typename
+        ... on SearchManga {
+          id slug
+          rating
+          originalName
+          titles { lang content }
+          cover { id main: resize(width: 300, height: 420, format: WEBP) { url } }
+        }
+      }
+    }
   }
 }`;
 
@@ -238,25 +259,42 @@ class DefaultExtension extends MProvider {
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
     async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
 
+    // Map result of `search(query, type)` operation. Returns SearchManga inline-fragment
+    // nodes; we additionally filter by rating (the search op doesn't accept rating filter,
+    // so we apply it client-side to keep Senkognito's NSFW-only flavor consistent).
+    mapSearchEdges(edges) {
+        const ratingFilter = this.nsfwRatingFilter();
+        const allowed = ratingFilter && Array.isArray(ratingFilter.include) ? new Set(ratingFilter.include) : null;
+        return (edges || []).map(e => {
+            const n = (e && e.node) || {};
+            if (n.__typename && n.__typename !== "SearchManga") return null;
+            if (allowed && n.rating && !allowed.has(n.rating)) return null;
+            return {
+                name: this.pickTitle(n.titles, { content: n.originalName }),
+                imageUrl: this.coverUrl(n.cover),
+                link: n.slug || n.id || ""
+            };
+        }).filter(x => x && x.name && x.link);
+    }
+
     async search(query, page, filters) {
         const q = (query || "").trim();
+        // Text search: top-level `search` operation indexes ALL title localizations
+        // (Cyrillic queries actually find results, unlike `mangas(search:)`).
+        // Rating filter is applied client-side after fetch.
+        if (q) {
+            const r = await this.gql("search", Q_SEARCH, { query: q, first: 50 });
+            if (r.error || !r.data) return { list: [], hasNextPage: false };
+            const edges = (r.data.search && r.data.search.edges) || [];
+            return { list: this.mapSearchEdges(edges), hasNextPage: false };
+        }
+        // No query: catalog with sort filter.
         let orderField = "POPULARITY_SCORE";
-        let orderDirection = "DESC";
         if (filters && filters[0] && filters[0].values) {
             const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
             orderField = filters[0].values[idx].value || orderField;
-            orderDirection = (filters[0].state && filters[0].state.ascending) ? "ASC" : "DESC";
         }
-        const r = await this.gql("fetchMangas", Q_MANGAS, {
-            first: 30,
-            search: q || null,
-            orderField,
-            orderDirection,
-            rating: this.nsfwRatingFilter()
-        });
-        if (r.error || !r.data) return { list: [], hasNextPage: false };
-        const conn = r.data.mangas || {};
-        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+        return await this.fetchListByOrder(orderField, page);
     }
 
     async getDetail(slug) {

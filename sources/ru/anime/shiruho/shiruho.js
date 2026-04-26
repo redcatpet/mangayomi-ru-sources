@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/shiruho.js",
@@ -26,6 +26,25 @@ const Q_ANIMES = `query fetchAnimes($first: Int = 30, $after: String, $search: S
   animes(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
     edges { node { id slug type status titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+// Top-level multi-entity search. Indexes every title localization (RU/EN/JA/etc.) —
+// unlike `animes(search:)` which only matches `originalName`. Returns SearchAnime
+// inline-fragment nodes.
+const Q_SEARCH = `query search($query: String!, $first: Int = 50) {
+  search(query: $query, type: ANIME, first: $first) {
+    edges {
+      node {
+        __typename
+        ... on SearchAnime {
+          id slug
+          originalName
+          titles { lang content }
+          cover { id main: resize(width: 300, height: 420, format: WEBP) { url } }
+        }
+      }
+    }
   }
 }`;
 
@@ -208,24 +227,37 @@ class DefaultExtension extends MProvider {
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
     async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
 
+    // Map result of `search(query, type)` (SearchAnime inline-fragment nodes).
+    mapSearchEdges(edges) {
+        return (edges || []).map(e => {
+            const n = (e && e.node) || {};
+            if (n.__typename && n.__typename !== "SearchAnime") return null;
+            return {
+                name: this.pickTitle(n.titles, { content: n.originalName }),
+                imageUrl: this.coverUrl(n.cover),
+                link: n.slug || n.id || ""
+            };
+        }).filter(x => x && x.name && x.link);
+    }
+
     async search(query, page, filters) {
         const q = (query || "").trim();
+        // Text search: top-level `search` operation indexes ALL title localizations.
+        // The `animes(search:)` filter only matches `originalName` and misses Russian
+        // queries (e.g. "Синяя тюрьма" returns nothing while "blue lock" finds it).
+        if (q) {
+            const r = await this.gql("search", Q_SEARCH, { query: q, first: 50 });
+            if (r.error || !r.data) return { list: [], hasNextPage: false };
+            const edges = (r.data.search && r.data.search.edges) || [];
+            return { list: this.mapSearchEdges(edges), hasNextPage: false };
+        }
+        // No query: catalog with sort filter.
         let orderField = "POPULARITY_SCORE";
-        let orderDirection = "DESC";
         if (filters && filters[0] && filters[0].values) {
             const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
             orderField = filters[0].values[idx].value || orderField;
-            orderDirection = (filters[0].state && filters[0].state.ascending) ? "ASC" : "DESC";
         }
-        const r = await this.gql("fetchAnimes", Q_ANIMES, {
-            first: 30,
-            search: q || null,
-            orderField,
-            orderDirection
-        });
-        if (r.error || !r.data) return { list: [], hasNextPage: false };
-        const conn = r.data.animes || {};
-        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+        return await this.fetchListByOrder(orderField, page);
     }
 
     async getDetail(slug) {

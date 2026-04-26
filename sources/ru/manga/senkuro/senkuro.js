@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.3",
+    "version": "0.2.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -25,6 +25,25 @@ const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: S
   mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
     edges { node { id slug type rating titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+// Top-level multi-entity search. Crucially this one DOES index every title
+// localization (RU/EN/JA/etc.), so Cyrillic queries actually work — unlike the
+// `mangas(search:)` argument which only matches against `originalName`.
+const Q_SEARCH = `query search($query: String!, $first: Int = 30) {
+  search(query: $query, type: MANGA, first: $first) {
+    edges {
+      node {
+        __typename
+        ... on SearchManga {
+          id slug
+          originalName
+          titles { lang content }
+          cover { id main: resize(width: 300, height: 420, format: WEBP) { url } }
+        }
+      }
+    }
   }
 }`;
 
@@ -225,9 +244,33 @@ class DefaultExtension extends MProvider {
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
     async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
 
+    // Map result of the top-level `search(query, type)` operation (different shape from
+    // `mangas` connection — node has SearchManga inline fragment, no `pageInfo`).
+    mapSearchEdges(edges) {
+        return (edges || []).map(e => {
+            const n = (e && e.node) || {};
+            // Filter to manga only — search() returns mixed entities
+            if (n.__typename && n.__typename !== "SearchManga") return null;
+            return {
+                name: this.pickTitle(n.titles, { content: n.originalName }),
+                imageUrl: this.coverUrl(n.cover),
+                link: n.slug || n.id || ""
+            };
+        }).filter(x => x && x.name && x.link);
+    }
+
     async search(query, page, filters) {
         const q = (query || "").trim();
-        // Sort filter
+        // Text search: use the top-level `search` operation, which actually indexes
+        // every title localization (Cyrillic, Latin, Japanese all match). The
+        // `mangas(search:)` filter only matches `originalName` and misses Russian queries.
+        if (q) {
+            const r = await this.gql("search", Q_SEARCH, { query: q, first: 30 });
+            if (r.error || !r.data) return { list: [], hasNextPage: false };
+            const edges = (r.data.search && r.data.search.edges) || [];
+            return { list: this.mapSearchEdges(edges), hasNextPage: false };
+        }
+        // No query: fall back to the catalog with sort filter applied.
         let orderField = "POPULARITY_SCORE";
         let orderDirection = "DESC";
         if (filters && filters[0] && filters[0].values) {
@@ -235,15 +278,7 @@ class DefaultExtension extends MProvider {
             orderField = filters[0].values[idx].value || orderField;
             orderDirection = (filters[0].state && filters[0].state.ascending) ? "ASC" : "DESC";
         }
-        const r = await this.gql("fetchMangas", Q_MANGAS, {
-            first: 30,
-            search: q || null,
-            orderField,
-            orderDirection
-        });
-        if (r.error || !r.data) return { list: [], hasNextPage: false };
-        const conn = r.data.mangas || {};
-        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+        return await this.fetchListByOrder(orderField, page);
     }
 
     async getDetail(slug) {
