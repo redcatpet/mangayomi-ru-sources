@@ -4,18 +4,18 @@
 const mangayomiSources = [{
     "name": "AniLib",
     "lang": "ru",
-    "baseUrl": "https://anilib.me",
+    "baseUrl": "https://animelib.org",
     "apiUrl": "https://api.cdnlibs.org/api",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.4.0",
+    "version": "0.5.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animelib.js",
-    "notes": "Аниме через backend семейства Lib (site_id=5). Origin+Referer обязательны. Несколько озвучек через players[] + Kodik-extractor для kodikplayer iframe."
+    "notes": "animelib.org (старый .me мёртв). API api.cdnlibs.org site_id=5. Несколько озвучек через players[] + Kodik-extractor. Для 18+/Pro нужен Bearer token: DevTools на animelib.org → Network → любой XHR к api.cdnlibs.org → заголовок Authorization → скопировать всё после слова Bearer → вставить в Settings."
 }];
 
 const ANILIB_SITE_ID = 5;

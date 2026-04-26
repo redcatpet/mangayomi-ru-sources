@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animego.js",
@@ -142,29 +142,18 @@ class DefaultExtension extends MProvider {
     }
 
     async getDetail(url) {
-        const detailUrl = this.absUrl(url);
+        // Skip the detail HTML page entirely — Mangayomi already has name+image from
+        // catalog. Only fetch /player/{id} AJAX (~90 KB) to enumerate episodes.
+        // Saves one full HTML round-trip (~120 KB) → fits inside the JS isolate
+        // response timeout for users behind DDoS-Guard latency.
         const animeId = this.animeIdFromUrl(url);
-
-        // Parallelize: detail page + /player/{id} AJAX run concurrently (was 2× sequential).
-        const fetches = [this.client.get(detailUrl, this.headers)];
-        if (animeId) fetches.push(this.client.get(`${this.source.baseUrl}/player/${animeId}`, this.ajaxHeaders));
-        const [res, playerRes] = await Promise.all(fetches);
-        const doc = new Document(res.body);
-
-        const name = (doc.selectFirst("h1") || { text: "" }).text.trim();
-        let imageUrl = "";
-        const posterImg = doc.selectFirst("div.anime-poster img, div.hero__cover img, img.anime-poster, div.anime-info img");
-        if (posterImg) imageUrl = this.absUrl(posterImg.attr("src") || posterImg.attr("data-src") || "");
-        if (!imageUrl) {
-            const og = doc.selectFirst("meta[property=og:image]");
-            if (og) imageUrl = og.attr("content") || "";
+        if (!animeId) {
+            return { name: "", imageUrl: "", description: "", genre: [], status: 5, episodes: [] };
         }
-        const descEl = doc.selectFirst("div.description, div.anime-description");
-        const description = descEl ? descEl.text.trim() : "";
-        const genre = doc.select("a[href*='/anime/genre/']").map(e => e.text.trim()).filter(x => x);
 
+        const playerRes = await this.client.get(`${this.source.baseUrl}/player/${animeId}`, this.ajaxHeaders);
         const episodes = [];
-        if (animeId && playerRes && playerRes.statusCode === 200) {
+        if (playerRes && playerRes.statusCode === 200) {
             try {
                 const content = (JSON.parse(playerRes.body).data || {}).content || "";
                 const optRe = /<option\s+value="(\d+)"[^>]*>([^<]+)</g;
@@ -182,7 +171,9 @@ class DefaultExtension extends MProvider {
             } catch (e) { /* ignore */ }
         }
 
-        return { name, imageUrl, description, genre, status: 5, episodes: episodes.reverse() };
+        // Mangayomi merges these fields with what was already shown in the catalog,
+        // so empty name/imageUrl are fine — they keep the catalog values.
+        return { name: "", imageUrl: "", description: "", genre: [], status: 5, episodes: episodes.reverse() };
     }
 
     async getVideoList(url) {

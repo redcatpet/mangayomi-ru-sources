@@ -10,11 +10,11 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/hentailib.js",
-    "notes": "18+, семейство Lib. Почти весь контент требует Bearer token — вставить в настройках."
+    "notes": "18+, семейство Lib (site_id=4). Почти весь контент требует Bearer token. Получить: DevTools на hentailib.me → Network → любой XHR к api.cdnlibs.org → Authorization → копируй всё после Bearer → вставь в Settings."
 }];
 
 const HENTAILIB_SITE_ID = 4;

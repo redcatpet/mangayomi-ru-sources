@@ -10,11 +10,11 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobelib.js",
-    "notes": "Новеллы семейства Lib (site_id=3). Глава возвращается как HTML-контент. Для некоторых переводов может требоваться Bearer token."
+    "notes": "Новеллы семейства Lib (site_id=3). Глава — HTML. Для платного — Bearer token: DevTools на ranobelib.me → Network → любой XHR к api.cdnlibs.org → Authorization → копируй всё после Bearer → Settings."
 }];
 
 const RANOBELIB_SITE_ID = 3;

@@ -3,18 +3,18 @@
 const mangayomiSources = [{
     "name": "MangaLib",
     "lang": "ru",
-    "baseUrl": "https://mangalib.me",
+    "baseUrl": "https://mangalib.org",
     "apiUrl": "https://api.cdnlibs.org/api",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/mangalib.js",
-    "notes": "API на cdnlibs.org. Для 18+ контента и Pro-глав нужен Bearer token (настройки источника)."
+    "notes": "mangalib.org (актуальный домен; .me ещё работает). API api.cdnlibs.org site_id=1. Для 18+/Pro-глав нужен Bearer token: DevTools на mangalib.org → Network → любой XHR к api.cdnlibs.org → Authorization → копируй всё после Bearer → вставь в Settings."
 }];
 
 const MANGALIB_SITE_ID = 1;

@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/anixart.js",
@@ -80,17 +80,17 @@ class DefaultExtension extends MProvider {
     }
 
     async fetchFilter(sort, page, filters) {
-        // POST body with sort + filter fields is more robust than GET query params.
+        // GET first (Mangayomi POST can stall behind ddos-guard); POST as fallback.
         const body = this.buildFilterBody(sort, filters);
-        const url = `${this.source.apiUrl}/filter/${page - 1}`;
-        const postHeaders = { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" };
-        let res = await this.client.post(url, postHeaders, body);
-        // Fallback to GET if POST returns empty (some regions)
+        const baseUrl = `${this.source.apiUrl}/filter/${page - 1}`;
+        let res = await this.client.get(`${baseUrl}?${body}`, this.headers);
         if (!res || res.statusCode !== 200 || !res.body) {
-            res = await this.client.get(`${url}?${body}`, this.headers);
+            const postHeaders = { ...this.headers, "Content-Type": "application/x-www-form-urlencoded" };
+            res = await this.client.post(baseUrl, postHeaders, body);
         }
-        if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        const json = JSON.parse(res.body);
+        if (!res || res.statusCode !== 200) return { list: [], hasNextPage: false };
+        let json;
+        try { json = JSON.parse(res.body); } catch (e) { return { list: [], hasNextPage: false }; }
         const content = json.content || [];
         return { list: this.mapList(content), hasNextPage: content.length >= AX_PAGE_SIZE };
     }
