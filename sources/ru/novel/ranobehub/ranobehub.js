@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.5.0",
+    "version": "0.5.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -134,7 +134,19 @@ class DefaultExtension extends MProvider {
                 const ch = volChapters[i];
                 const cNumApi = ch.num != null ? ch.num : "?";
                 const seqInVol = i + 1;
-                const chUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNumApi}`;
+                // Synthetic clean URL — every URL ends with chapter id (always integer).
+                // Rationale: pre-v0.5.1 we used the canonical `/ranobe/{id}/{vol}/{num}` URL,
+                // but for Solo Leveling that gave 398/457 paths ending in floats like
+                // `/6/1.01`. Some HTTP/URI parsing layers in the iOS Mangayomi runtime
+                // treat the dot+digits as a file extension and reject the URL. With the
+                // synthetic `/_ch/{id}` form, every URL is a clean integer suffix, and
+                // resolveStaleChapterUrl maps it to the real URL via the contents API
+                // before fetching.
+                // Synthetic URL `/_ch/{ranobeId}/{chapterId}` — both integers, no floats,
+                // self-contained for the rescue.
+                const chUrl = ch.id
+                    ? `${this.source.baseUrl}/_ch/${ranobeId}/${ch.id}`
+                    : (ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNumApi}`);
                 const tsRaw = ch.changed_at;
                 let tsMs;
                 if (tsRaw) {
@@ -144,9 +156,13 @@ class DefaultExtension extends MProvider {
                 const dateUpload = (Number.isFinite(tsMs) ? tsMs : Date.now()).toString();
                 const rawName = (ch.name || "").trim();
                 const globalSeq = chapters.length + 1;
-                let chName = "Гл. " + globalSeq + ". ";
-                if (vol.num) chName += "Том " + vNum + " · ";
-                chName += "Глава " + seqInVol;
+                // Latin "Ch." prefix first: Mangayomi's chapter-recognition regex
+                // (lib/utils/chapter_recognition.dart) is `[0-9]+(\.[0-9]+)?(\.?[a-z]+)?`
+                // on lowercased input. ASCII letters give the parser a clean first match
+                // before the Cyrillic suffix.
+                let chName = "Ch. " + globalSeq;
+                if (vol.num) chName += " · Том " + vNum;
+                chName += " · Глава " + seqInVol;
                 if (rawName) chName += ": " + rawName;
                 chapters.push({
                     name: chName,
@@ -189,32 +205,51 @@ class DefaultExtension extends MProvider {
         };
     }
 
+    async resolveChapterIdToUrl(chapterId) {
+        // Walk every ranobe's contents until we find the chapter — only used as a last
+        // resort when the synthetic `_ch/{id}` URL doesn't carry the parent ranobeId.
+        // In practice the synthetic URL always knows ranobeId (we route through the
+        // narrower lookup below). This generic walk would be expensive; we skip it.
+        return null;
+    }
+
+    async resolveChapterViaContents(ranobeId, chapterId) {
+        try {
+            const res = await this.client.get(`${this.source.apiUrl}/ranobe/${ranobeId}/contents`, this.headers);
+            if (res.statusCode !== 200) return null;
+            const data = JSON.parse(res.body);
+            for (const vol of (data.volumes || [])) {
+                for (const ch of (vol.chapters || [])) {
+                    if (String(ch.id) === String(chapterId) && ch.url) return ch.url;
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
     async resolveStaleChapterUrl(url) {
         if (!url || !url.match) return url;
-        // Pre-v0.3 of this extension stored chapter URLs as
-        // `${apiUrl}/ranobe/{ranobeId}/chapters/{chapterId}` — that JSON endpoint now 404s.
-        // Mangayomi caches chapter URLs in its local DB and won't refresh them on getDetail
-        // unless the user removes & re-adds the title. Rescue: detect the broken pattern,
-        // resolve the chapter ID against the contents API, and fall through to the
-        // canonical HTML URL.
-        const m = url.match(/\/api\/ranobe\/(\d+)\/chapters\/(\d+)/);
-        if (m) {
-            const ranobeId = m[1];
-            const chapterId = m[2];
-            try {
-                const res = await this.client.get(`${this.source.apiUrl}/ranobe/${ranobeId}/contents`, this.headers);
-                if (res.statusCode !== 200) return url;
-                const data = JSON.parse(res.body);
-                for (const vol of (data.volumes || [])) {
-                    for (const ch of (vol.chapters || [])) {
-                        if (String(ch.id) === chapterId && ch.url) return ch.url;
-                    }
-                }
-            } catch (e) {}
+
+        // v0.5.1+ synthetic clean URLs: `${baseUrl}/_ch/{chapterId}`. Look up the real
+        // URL via any title's contents — but to avoid scanning every ranobe we also
+        // need the parent ranobeId. The synthetic URL alone has only the chapterId,
+        // so we widen the format to `/_ch/{ranobeId}/{chapterId}` if both are known
+        // (set in getDetail when ch.id is present). Fallback: pass through.
+        const synth = url.match(/\/_ch\/(\d+)\/(\d+)$/) || url.match(/\/_ch\/(\d+)$/);
+        if (synth && synth.length === 3) {
+            const resolved = await this.resolveChapterViaContents(synth[1], synth[2]);
+            if (resolved) return resolved;
+        }
+
+        // Pre-v0.3 layout: `${apiUrl}/ranobe/{ranobeId}/chapters/{chapterId}` (now 404).
+        const legacy = url.match(/\/api\/ranobe\/(\d+)\/chapters\/(\d+)/);
+        if (legacy) {
+            const resolved = await this.resolveChapterViaContents(legacy[1], legacy[2]);
+            if (resolved) return resolved;
             return url;
         }
-        // Strip our own `?cid=` / `&cid=` disambiguator before fetching (server ignores
-        // it but stripping avoids ambiguity in logs).
+
+        // Strip historical `?cid=` query (v0.3.8 / v0.4.0 disambiguator).
         return url.replace(/[?&]cid=\d+/, "");
     }
 
