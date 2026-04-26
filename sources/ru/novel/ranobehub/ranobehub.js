@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.6",
+    "version": "0.3.7",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -107,8 +107,21 @@ class DefaultExtension extends MProvider {
                 } else {
                     dateUpload = Date.now().toString();
                 }
+                // Build name. If ch.name already starts with "Глава" (or "Том"), use it directly
+                // — avoids redundant "Глава 1.01: Глава 1.1. Десятый" on titles like Solo Leveling
+                // where 398/457 chapters have float `num` AND a name that already includes "Глава X".
+                const rawName = (ch.name || "").trim();
+                const startsWithGlava = /^(Том|Глава|Пролог|Эпилог|Интерлюд)/i.test(rawName);
+                let chName;
+                if (rawName && startsWithGlava) {
+                    chName = (vol.num ? "Том " + vNum + " · " : "") + rawName;
+                } else if (rawName) {
+                    chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum + ": " + rawName;
+                } else {
+                    chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum;
+                }
                 chapters.push({
-                    name: (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum + (ch.name ? ": " + ch.name : ""),
+                    name: chName,
                     url: String(chUrl),
                     dateUpload: dateUpload,
                     scanlator: null
