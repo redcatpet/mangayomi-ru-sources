@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.3",
+    "version": "0.4.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -146,15 +146,45 @@ class DefaultExtension extends MProvider {
             if (imgEl) imageUrl = this.absUrl(imgEl.attr("src") || imgEl.attr("data-src") || "");
         }
 
-        const description = (
-            doc.selectFirst("div[itemprop=description]")
-            || doc.selectFirst("div.book-description")
-            || doc.selectFirst("div.book-content")
-        );
-        const descriptionText = description ? description.text.trim() : "";
+        // Description — primary source is the visible div; falls back to og:description
+        // (always present, scoped to current book, but prefixed with "⭐ rating | 📖 N глав | tags | …").
+        let descriptionText = "";
+        const description = doc.selectFirst("div[itemprop=description]")
+                         || doc.selectFirst("div.book-description")
+                         || doc.selectFirst("div.book-content");
+        if (description) descriptionText = description.text.trim();
+        if (!descriptionText) {
+            const ogDesc = doc.selectFirst("meta[property='og:description']");
+            if (ogDesc) {
+                let d = (ogDesc.attr("content") || "").trim();
+                // Strip the "⭐ X | 📖 X | tag,tag,tag |" prefix (3 leading "|"-separated segments).
+                const parts = d.split("|");
+                if (parts.length > 3) d = parts.slice(3).join("|").trim();
+                descriptionText = d;
+            }
+        }
 
-        const author = doc.select("span[itemprop=author] a, a[href^='/user/']").map(e => e.text.trim()).filter(x => x).join(", ");
-        const genre = doc.select("a[href*='/category/'], span[itemprop=genre]").map(e => e.text.trim()).filter(x => x);
+        // Author — site uses `<p><strong>Автор:</strong> <em><a href="/search?from=book&t=...">Name</a></em></p>`.
+        let author = "";
+        const authorAnchor = doc.selectFirst("a[href*='/search?from=book&t=']");
+        if (authorAnchor) author = authorAnchor.text.trim();
+        if (!author) {
+            // Last resort — scan paragraphs for one whose <strong> says "Автор:".
+            const ps = doc.select("p");
+            for (const p of ps) {
+                const strong = p.selectFirst("strong");
+                if (!strong || strong.text.indexOf("Автор") < 0) continue;
+                const a = p.selectFirst("em a") || p.selectFirst("a");
+                if (a) { author = a.text.trim(); break; }
+            }
+        }
+
+        // Genres listed under <strong>Жанры:</strong> with `/search?genres[0]=N` (URL-encoded) anchors,
+        // each carrying class="badge".
+        let genre = doc.select("a.badge[href*='genres']").map(e => e.text.trim()).filter(x => x);
+        if (genre.length === 0) {
+            genre = doc.select("a[href*='/category/'], span[itemprop=genre]").map(e => e.text.trim()).filter(x => x);
+        }
 
         // Chapters — table.chapters or div with chapter links
         const chapters = [];
