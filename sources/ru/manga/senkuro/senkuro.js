@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.4",
+    "version": "0.2.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -185,6 +185,16 @@ class DefaultExtension extends MProvider {
         return "";
     }
 
+    // Map MangaRating enum (GENERAL/SENSITIVE/QUESTIONABLE/EXPLICIT) to the
+    // age label Senkuro itself shows on the title page (0+ / 12+ / 16+ / 18+).
+    formatRating(rating) {
+        if (rating === "EXPLICIT") return "18+";
+        if (rating === "QUESTIONABLE") return "16+";
+        if (rating === "SENSITIVE") return "12+";
+        if (rating === "GENERAL") return "0+";
+        return "";
+    }
+
     parseStatus(s) {
         if (s === "ONGOING") return 0;
         if (s === "FINISHED") return 1;
@@ -303,7 +313,12 @@ class DefaultExtension extends MProvider {
             descriptionText = descriptionText ? `${prefix}\n\n${descriptionText}` : prefix;
         }
 
-        const genre = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        const labels = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        // Prepend age rating ("0+"/"12+"/"16+"/"18+") as a first chip — Mangayomi
+        // surfaces every entry of `genre` as a tag, so it ends up visible at the
+        // top of the genre cloud on the detail page (matches senkuro.com badge UX).
+        const ratingLabel = this.formatRating(m.rating);
+        const genre = ratingLabel ? [ratingLabel].concat(labels) : labels;
         const author = (m.mainStaff || []).map(s => s.person && s.person.name).filter(Boolean).join(", ");
         const status = this.parseStatus(m.status);
 

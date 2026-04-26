@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.2",
+    "version": "0.1.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/shiruho.js",
@@ -51,7 +51,7 @@ const Q_SEARCH = `query search($query: String!, $first: Int = 50) {
 // Anime detail by slug. description is a TiptapNodeUnion tree — request key node types.
 const Q_ANIME = `query fetchAnime($slug: String!) {
   anime(slug: $slug) {
-    id slug type status score views
+    id slug type status score views rating
     episodes episodesAired episodeDuration season
     originalName { lang content }
     titles { lang content }
@@ -171,6 +171,16 @@ class DefaultExtension extends MProvider {
         return "";
     }
 
+    // Map AnimeRating (GENERAL/SENSITIVE/QUESTIONABLE/EXPLICIT) to the
+    // age label Shiruho itself shows (0+ / 12+ / 16+ / 18+). Same enum as Senkuro.
+    formatRating(rating) {
+        if (rating === "EXPLICIT") return "18+";
+        if (rating === "QUESTIONABLE") return "16+";
+        if (rating === "SENSITIVE") return "12+";
+        if (rating === "GENERAL") return "0+";
+        return "";
+    }
+
     parseStatus(s) {
         if (s === "ONGOING") return 0;
         if (s === "FINISHED") return 1;
@@ -281,7 +291,11 @@ class DefaultExtension extends MProvider {
             descriptionText = descriptionText ? `${prefix}\n\n${descriptionText}` : prefix;
         }
 
-        const genre = (a.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        const labels = (a.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        // Prepend age rating ("0+"/"12+"/"16+"/"18+") as a first chip — visible on
+        // detail page, matches the badge shiruho.com itself shows.
+        const ratingLabel = this.formatRating(a.rating);
+        const genre = ratingLabel ? [ratingLabel].concat(labels) : labels;
         const studios = (a.studios || []).map(s => s.name).filter(Boolean);
         const staff = (a.mainStaff || []).map(s => s.person && s.person.name).filter(Boolean);
         const author = staff.length ? staff.join(", ") : studios.join(", ");

@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.2.2",
+    "version": "0.2.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
@@ -190,6 +190,16 @@ class DefaultExtension extends MProvider {
         return "";
     }
 
+    // Map MangaRating enum (GENERAL/SENSITIVE/QUESTIONABLE/EXPLICIT) to the
+    // age label Senkognito itself shows on the title page (0+ / 12+ / 16+ / 18+).
+    formatRating(rating) {
+        if (rating === "EXPLICIT") return "18+";
+        if (rating === "QUESTIONABLE") return "16+";
+        if (rating === "SENSITIVE") return "12+";
+        if (rating === "GENERAL") return "0+";
+        return "";
+    }
+
     parseStatus(s) {
         if (s === "ONGOING") return 0;
         if (s === "FINISHED") return 1;
@@ -319,7 +329,12 @@ class DefaultExtension extends MProvider {
             descriptionText = descriptionText ? `${prefix}\n\n${descriptionText}` : prefix;
         }
 
-        const genre = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        const labels = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        // Prepend age rating ("18+"/"16+"/etc.) as the first genre chip — most
+        // Senkognito titles are 18+ so the badge becomes a visible header on
+        // the detail page, matching senkognito.com's "18+" badge behavior.
+        const ratingLabel = this.formatRating(m.rating);
+        const genre = ratingLabel ? [ratingLabel].concat(labels) : labels;
         const author = (m.mainStaff || []).map(s => s.person && s.person.name).filter(Boolean).join(", ");
         const status = this.parseStatus(m.status);
 
