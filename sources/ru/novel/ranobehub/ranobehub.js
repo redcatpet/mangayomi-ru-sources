@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.5",
+    "version": "0.3.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -90,17 +90,27 @@ class DefaultExtension extends MProvider {
         const contents = chRes.statusCode === 200 ? (JSON.parse(chRes.body).volumes || []) : [];
 
         const statusMap = { "В процессе": 0, "Завершено": 1, "Заморожен": 2, "Заброшен": 3 };
-        const status = statusMap[info.status && info.status.title] ?? 5;
+        const statusKey = (info.status && info.status.title) || "";
+        const mapped = statusMap[statusKey];
+        const status = mapped == null ? 5 : mapped;
 
         const chapters = [];
         for (const vol of contents) {
+            const vNum = vol.num != null ? vol.num : 1;
             for (const ch of (vol.chapters || [])) {
-                // IMPORTANT: ch.url is an HTML page URL; the JSON /chapters/{id} endpoint 404s.
-                const chUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vol.num || 1}/${ch.num || 0}`;
+                const cNum = ch.num != null ? ch.num : "?";
+                const chUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNum}`;
+                let dateUpload;
+                if (ch.changed_at) {
+                    const n = +ch.changed_at;
+                    dateUpload = (isNaN(n) ? new Date(ch.changed_at).valueOf() : n * 1000).toString();
+                } else {
+                    dateUpload = Date.now().toString();
+                }
                 chapters.push({
-                    name: `${vol.num ? "Том " + vol.num + " · " : ""}Глава ${ch.num || "?"}` + (ch.name ? `: ${ch.name}` : ""),
-                    url: chUrl,
-                    dateUpload: ch.changed_at ? (isNaN(+ch.changed_at) ? new Date(ch.changed_at).valueOf() : (+ch.changed_at) * 1000).toString() : Date.now().toString(),
+                    name: (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum + (ch.name ? ": " + ch.name : ""),
+                    url: String(chUrl),
+                    dateUpload: dateUpload,
                     scanlator: null
                 });
             }
@@ -136,7 +146,7 @@ class DefaultExtension extends MProvider {
             author: authorStr,
             genre: genre,
             status: status,
-            chapters: chapters.reverse()
+            chapters: chapters.slice().reverse()
         };
     }
 
