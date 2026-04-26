@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.9",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -112,18 +112,22 @@ class DefaultExtension extends MProvider {
         const mapped = statusMap[statusKey];
         const status = mapped == null ? 5 : mapped;
 
+        // Build chapters. Mangayomi needs an integer "Глава N" pattern in the name to
+        // sort/render the list — Solo Leveling has 398/457 chapters with float ch.num
+        // (1.01, 1.02, …) and names that say "Глава 1.1. ...", which broke rendering.
+        // We therefore build a per-volume integer sequence (1, 2, 3, …) for the visible
+        // chapter number and keep the original name as a suffix.
         const chapters = [];
         for (const vol of contents) {
             const vNum = vol.num != null ? vol.num : 1;
-            for (const ch of (vol.chapters || [])) {
-                const cNum = ch.num != null ? ch.num : "?";
-                // Append chapter ID as query so every URL ends with a unique integer.
-                // Solo Leveling has 398/457 chapters with float `num` (1.01, 1.02 …) — URLs
-                // therefore end in "/{vol}/{1.01}" etc., and Mangayomi's chapter sort/dedup
-                // regex (likely `/\d+$/`) extracts only "01" → integer 1, colliding with
-                // chapter 1 in the same volume. A trailing `?cid={id}` ensures the regex
-                // sees the chapter ID (always unique integer); the server ignores the query.
-                const baseUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNum}`;
+            const volChapters = vol.chapters || [];
+            for (let i = 0; i < volChapters.length; i++) {
+                const ch = volChapters[i];
+                const cNumApi = ch.num != null ? ch.num : "?";
+                const seqInVol = i + 1; // always integer, always unique within vol
+                // URL with a trailing `?cid=ID` to give every URL a unique integer suffix
+                // (server ignores the query; the stale-URL rescue strips ?cid before fetch).
+                const baseUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNumApi}`;
                 const chUrl = ch.id ? baseUrl + (baseUrl.indexOf("?") < 0 ? "?cid=" : "&cid=") + ch.id : baseUrl;
                 let dateUpload;
                 if (ch.changed_at) {
@@ -132,19 +136,11 @@ class DefaultExtension extends MProvider {
                 } else {
                     dateUpload = Date.now().toString();
                 }
-                // Build name. If ch.name already starts with "Глава" (or "Том"), use it directly
-                // — avoids redundant "Глава 1.01: Глава 1.1. Десятый" on titles like Solo Leveling
-                // where 398/457 chapters have float `num` AND a name that already includes "Глава X".
                 const rawName = (ch.name || "").trim();
-                const startsWithGlava = /^(Том|Глава|Пролог|Эпилог|Интерлюд)/i.test(rawName);
-                let chName;
-                if (rawName && startsWithGlava) {
-                    chName = (vol.num ? "Том " + vNum + " · " : "") + rawName;
-                } else if (rawName) {
-                    chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum + ": " + rawName;
-                } else {
-                    chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + cNum;
-                }
+                // ALWAYS include "Глава {integer-seq}" so Mangayomi's chapter-number parser
+                // sees a clean integer regardless of the source's numbering scheme.
+                let chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + seqInVol;
+                if (rawName) chName += ": " + rawName;
                 chapters.push({
                     name: chName,
                     url: String(chUrl),
