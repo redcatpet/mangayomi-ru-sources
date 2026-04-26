@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.0",
+    "version": "0.3.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -106,12 +106,21 @@ class DefaultExtension extends MProvider {
             }
         }
 
+        // Authors carry name_rus/name_eng; translators carry name. Combine both as "Author / tr. Translator".
+        const authorList = (info.authors || []).map(a => a.name_rus || a.name_eng || a.name).filter(x => x);
+        const translatorList = (info.translators || []).map(t => t.name_rus || t.name_eng || t.name).filter(x => x);
+        const authorStr = authorList.join(", ") + (translatorList.length ? ` (пер. ${translatorList.join(", ")})` : "");
+
+        // Tags are { events, genres } where each item has { title, names: { rus, eng } }.
+        const tagItems = [].concat((info.tags && info.tags.genres) || [], (info.tags && info.tags.events) || []);
+        const genre = tagItems.map(t => t.title || (t.names && (t.names.rus || t.names.eng)) || "").filter(x => x);
+
         return {
             name: (info.names && (info.names.rus || info.names.eng)) || info.name || String(slug),
-            imageUrl: (info.posters && (info.posters.medium || info.posters.small)) || "",
+            imageUrl: (info.posters && (info.posters.medium || info.posters.big || info.posters.small)) || "",
             description: info.description || info.synopsis || "",
-            author: ((info.authors || []).map(a => a.name || a) || []).join(", "),
-            genre: (info.tags && (info.tags.events || []).concat(info.tags.genres || []) || []).map(t => t.name || t),
+            author: authorStr,
+            genre: genre,
             status: status,
             chapters: chapters.reverse()
         };

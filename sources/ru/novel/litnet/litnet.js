@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.3.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/litnet.js",
@@ -41,28 +41,50 @@ class DefaultExtension extends MProvider {
         return this.source.baseUrl + (u.startsWith("/") ? u : "/" + u);
     }
 
+    pushBook(list, seen, titleA, container) {
+        const href = titleA && titleA.attr ? (titleA.attr("href") || "") : "";
+        if (!href || seen[href]) return;
+        // Match both /ru/book/{slug} and rare /book/{slug} (legacy).
+        if (!/\/(?:ru\/)?book\/[^/?]+/.test(href)) return;
+        const nameEl = (titleA.selectFirst && titleA.selectFirst("span[itemprop=name]")) || titleA;
+        const name = ((nameEl.text || titleA.attr("title") || "") + "").trim();
+        if (!name) return;
+        let imageUrl = "";
+        if (container) {
+            const img = container.selectFirst("img[itemprop=image]")
+                     || container.selectFirst(".book-img img")
+                     || container.selectFirst("img");
+            if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+        }
+        seen[href] = true;
+        list.push({ name, imageUrl, link: href });
+    }
+
     parseCatalog(htmlBody) {
         const doc = new Document(htmlBody);
         const list = [];
         const seen = {};
-        // Current layout: <div class="row book-item"> with book-title / book-img
-        const items = doc.select("div.row.book-item, div.book-item, div.book-search-item");
+
+        // Tier 1 — documented layouts: row.book-item / book-item / book-search-item.
+        const items = doc.select("div.row.book-item, div.book-item, div.book-search-item, article.book-item, .book-card");
         for (const it of items) {
-            const titleA = it.selectFirst("h4.book-title a") || it.selectFirst(".book-title a") || it.selectFirst("a[href*='/ru/book/']");
+            const titleA = it.selectFirst("h4.book-title a")
+                        || it.selectFirst(".book-title a")
+                        || it.selectFirst("a[href*='/ru/book/']")
+                        || it.selectFirst("a[itemprop=url]");
             if (!titleA) continue;
-            const href = titleA.attr("href") || "";
-            if (!href || seen[href]) continue;
-            if (!/\/ru\/book\//.test(href)) continue;
-            seen[href] = true;
-            // title is inside span[itemprop=name] on current layout
-            const nameEl = titleA.selectFirst("span[itemprop=name]") || titleA;
-            const name = (nameEl.text || titleA.attr("title") || "").trim();
-            if (!name) continue;
-            const img = it.selectFirst("img[itemprop=image]") || it.selectFirst(".book-img img") || it.selectFirst("img");
-            let imageUrl = "";
-            if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
-            list.push({ name, imageUrl, link: href });
+            this.pushBook(list, seen, titleA, it);
         }
+
+        // Tier 2 — fallback: any anchor pointing to a /ru/book/ slug. Use the closest
+        // ancestor as the card for image extraction; if none, just use the anchor itself.
+        if (list.length === 0) {
+            const anchors = doc.select("a[href*='/ru/book/']");
+            for (const a of anchors) {
+                this.pushBook(list, seen, a, a.parent || a);
+            }
+        }
+
         return { list, hasNextPage: list.length >= 10 };
     }
 
