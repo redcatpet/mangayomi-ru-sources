@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/anixart.js",
@@ -213,8 +213,9 @@ class DefaultExtension extends MProvider {
 
             const isKodik = providerName.toLowerCase() === "kodik" || playerUrl.indexOf("kodikplayer") >= 0;
             if (isKodik) {
-                const v = await kodikExtract(this.client, playerUrl, this.source.baseUrl, `Anixart · ${typeName}`);
-                for (const vid of v) videos.push(vid);
+                // kodikExtract returns HLS streams + iframe fallback at the end (v0.8.1+).
+                const extracted = await kodikExtract(this.client, playerUrl, this.source.baseUrl, `Anixart · ${typeName}`);
+                for (const vid of extracted) videos.push(vid);
                 continue;
             }
             let src = playerUrl;

@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -88,16 +88,28 @@ class DefaultExtension extends MProvider {
     }
 
     async gql(operationName, query, variables) {
-        const body = JSON.stringify({ operationName, query, variables: variables || {} });
-        const res = await this.client.post(this.source.apiUrl, this.gqlHeaders, body);
+        // Mangayomi's Client.post sometimes mangles JSON-string body (depending on
+        // the qjs binding's serialization). Try string FIRST (Apollo standard);
+        // fall back to plain object body which gets form-encoded — Apollo accepts
+        // application/x-www-form-urlencoded too if Content-Type is set right.
+        const payload = { operationName, query, variables: variables || {} };
+        const bodyStr = JSON.stringify(payload);
+        let res = await this.client.post(this.source.apiUrl, this.gqlHeaders, bodyStr);
+        if (!res || res.statusCode !== 200 || !res.body) {
+            // Retry with body as object (some Mangayomi builds re-stringify objects correctly
+            // but treat string body as form data)
+            res = await this.client.post(this.source.apiUrl, this.gqlHeaders, payload);
+        }
         if (!res || res.statusCode !== 200) {
-            return { error: `HTTP ${res ? res.statusCode : "?"}` };
+            const code = res ? res.statusCode : "?";
+            const snippet = res && res.body ? res.body.slice(0, 200) : "";
+            return { error: `HTTP ${code}: ${snippet}` };
         }
         try {
             const j = JSON.parse(res.body);
             if (j.errors) return { error: (j.errors[0] && j.errors[0].message) || "graphql error" };
             return { data: j.data };
-        } catch (e) { return { error: "parse error" }; }
+        } catch (e) { return { error: "parse error: " + (res.body || "").slice(0, 200) }; }
     }
 
     pickTitle(titles, originalName) {
@@ -140,16 +152,33 @@ class DefaultExtension extends MProvider {
     }
 
     async fetchListByOrder(field, page) {
-        // Senkuro uses cursor-based pagination — emulate page-based by chaining first=30.
-        // For p=1 use no "after"; for p>1 walk from cached cursor via the pageInfo of p=1 onward.
-        // Mangayomi calls getPopular(1), getPopular(2), … — we cache the cursor inside instance.
-        const cacheKey = `__cursor_${field}_${page}`;
+        // Senkuro uses cursor-based pagination — emulate page-based by walking from p=1.
+        // For p>1 we re-walk from start (Mangayomi catalog scrolls page-by-page so this
+        // is acceptable: each page is one extra round-trip).
         let after = null;
-        if (page > 1) after = this[cacheKey - 1] || null; // attempted lookup; fallback to none
-        const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC" });
-        if (r.error || !r.data) return { list: [], hasNextPage: false };
-        const conn = r.data.mangas || {};
-        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+        for (let i = 1; i <= page; i++) {
+            const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC" });
+            if (r.error || !r.data || !r.data.mangas) {
+                if (page === 1) {
+                    // Surface the error to the user via a single fake "result" so they
+                    // see WHAT is wrong (not just "0 results").
+                    return {
+                        list: [{
+                            name: `[Senkuro error] ${r.error || "no data"}`,
+                            imageUrl: "",
+                            link: "__error__"
+                        }],
+                        hasNextPage: false
+                    };
+                }
+                return { list: [], hasNextPage: false };
+            }
+            const conn = r.data.mangas || {};
+            if (i === page) return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+            after = conn.pageInfo && conn.pageInfo.endCursor;
+            if (!after || !conn.pageInfo.hasNextPage) return { list: [], hasNextPage: false };
+        }
+        return { list: [], hasNextPage: false };
     }
 
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }

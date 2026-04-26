@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.0",
+    "version": "0.5.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animego.js",
@@ -194,6 +194,7 @@ class DefaultExtension extends MProvider {
             const translation = m[3];
 
             if (provider.toLowerCase() === "kodik" || playerUrl.indexOf("kodikplayer") >= 0) {
+                // kodikExtract returns HLS streams + iframe fallback at the end (v0.8.1+).
                 const kodikVids = await kodikExtract(this.client, playerUrl, this.source.baseUrl, `AnimeGO · ${translation || "Kodik"}`);
                 for (const v of kodikVids) videos.push(v);
                 continue;
