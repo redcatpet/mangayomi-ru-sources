@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.0",
+    "version": "0.4.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -42,22 +42,34 @@ class DefaultExtension extends MProvider {
         const doc = new Document(htmlBody);
         const list = [];
         const seen = {};
-        // Current layout uses div.row-book; ul.search-results li retained as legacy fallback
+        // Cards use schema.org Book itemscope; legacy layouts use div.row-book or ul.search-results li.
         let cards = doc.select("div.row-book");
+        if (cards.length === 0) cards = doc.select("div[itemtype*='Book']");
         if (cards.length === 0) cards = doc.select("ul.search-results li");
+        // Fallback: walk every /book/ anchor's parent — rescues unknown layouts.
+        if (cards.length === 0) cards = doc.select("a[href^='/book/']");
         for (const c of cards) {
-            const a = c.selectFirst("a[href^='/book/']");
-            if (!a) continue;
+            const a = c.selectFirst("a[href^='/book/']") || c;
+            if (!a || !a.attr) continue;
             const link = a.attr("href") || "";
             if (!link || seen[link]) continue;
-            // Accept only real book URLs like /book/12345
             if (!/^\/book\/\d+/.test(link)) continue;
             seen[link] = true;
             let imageUrl = "";
             const img = c.selectFirst("img[src^='/i/book/']") || c.selectFirst("img");
             if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
-            const titleEl = c.selectFirst("span.t-title") || c.selectFirst("p.t-title") || c.selectFirst(".book-title, h5, h4") || a;
-            const name = (titleEl.text || a.attr("title") || "").trim();
+            // Title — try span/p.t-title, then itemprop=name (h4 in current layout), then any heading.
+            const titleEl = c.selectFirst("[itemprop=name]")
+                         || c.selectFirst("span.t-title")
+                         || c.selectFirst("p.t-title")
+                         || c.selectFirst(".book-title, h5, h4, h3")
+                         || a;
+            let name = (titleEl.text || a.attr("title") || "").trim();
+            if (!name) {
+                // Last-resort: use image-container title attribute.
+                const imgC = c.selectFirst(".image-container");
+                if (imgC) name = (imgC.attr("title") || "").trim();
+            }
             if (!name) continue;
             list.push({ name, imageUrl, link });
         }
@@ -65,8 +77,9 @@ class DefaultExtension extends MProvider {
     }
 
     async getPopular(page) {
-        // sort=5 = по просмотрам
-        const url = `${this.source.baseUrl}/search?t=&cat=0&type=0&sort=5&atmosphere=0&page=${page}`;
+        // Use the byte-exact v0.3.0 URL pattern — verified working.
+        // (Server treats `category` as unknown and applies defaults — equivalent to no cat filter.)
+        const url = `${this.source.baseUrl}/search?t=&category=0&type=0&sort=0&atmosphere=0&page=${page}`;
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseBookList(res.body);
@@ -74,13 +87,23 @@ class DefaultExtension extends MProvider {
 
     async getLatestUpdates(page) {
         // sort=4 = по дате последней активности
-        const url = `${this.source.baseUrl}/search?t=&cat=0&type=0&sort=4&atmosphere=0&page=${page}`;
+        const url = `${this.source.baseUrl}/search?t=&category=0&type=0&sort=4&atmosphere=0&page=${page}`;
         const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
         return this.parseBookList(res.body);
     }
 
     async search(query, page, filters) {
+        // No filters AND no query -> use the same default URL as getPopular for compatibility.
+        const filterActive = filters && filters.length && filters.some(f => {
+            if (!f || !f.values) return false;
+            const idx = f.state || 0;
+            const v = f.values[idx] && f.values[idx].value;
+            return v != null && String(v) !== "0" && String(v) !== "5"; // 5 is sort default
+        });
+        if (!query && !filterActive) {
+            return this.getPopular(page);
+        }
         let cat = "0", type = "0", atm = "0", sort = "5";
         if (filters && filters.length) {
             const fCat = filters[0];

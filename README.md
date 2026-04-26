@@ -25,7 +25,7 @@
 
 ---
 
-## Реальный статус (v0.7.1, проверено через E2E с фактической загрузкой контента)
+## Реальный статус (v0.7.2, проверено через E2E с фактической загрузкой контента)
 
 E2E-харнес (`_scratch/e2e_real.js`) для каждого источника:
 1. Запрашивает `getPopular` — должен вернуть список
@@ -39,7 +39,9 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 
 **Манга (6):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga
 
-**Новеллы (4):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф
+**Новеллы (5):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф · Tl.Rulate
+
+> **v0.7.2 hotfix** (Ranobe-секция): Tl.Rulate каталог восстановлен (регрессия v0.4.0 — фильтр-параметры путали сервер); RanobeHub детальная страница больше не показывает `[object Object]` в авторе и сырой JSON в жанрах; Jaomix и Litnet парсеры стали устойчивее к смене вёрстки (трёхуровневый fallback).
 
 ### ⚠ Частично работают (нужен токен / cookie / RU IP)
 
@@ -48,8 +50,7 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 | **MangaLib / AniLib / HentaiLib** | Bearer token для 18+ и Pro-глав | `mangalib.org` / `animelib.org` / `hentailib.me` → DevTools → Network → любой XHR к API → `Authorization: Bearer ...` (см. ниже) |
 | **MintManga / AllHentai** | Session cookie (без неё сервер шлёт `deleted1.png`) | Сайт → DevTools → Application → Cookies → копируй ВЕСЬ cookie-string после логина |
 | **Author.Today** | Session cookie | то же самое — без неё текст глав AES-зашифрован |
-| **Litnet** | Session cookie | без неё CF блочит каталог |
-| **Tl.Rulate** | Логин для платных глав; бесплатные читаются без токена | — |
+| **Litnet** | Session cookie | без неё CF блочит каталог; в v0.7.2 парсер тянет всё, что отдаёт CF, поэтому заявки со скрытой каталогом теперь видны при наличии RU-IP |
 
 ### ❌ Известные не-фиксы
 
