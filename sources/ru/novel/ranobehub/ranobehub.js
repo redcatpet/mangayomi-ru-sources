@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.0",
+    "version": "0.5.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -112,11 +112,20 @@ class DefaultExtension extends MProvider {
         const mapped = statusMap[statusKey];
         const status = mapped == null ? 5 : mapped;
 
-        // Build chapters. Mangayomi needs an integer "Глава N" pattern in the name to
-        // sort/render the list — Solo Leveling has 398/457 chapters with float ch.num
-        // (1.01, 1.02, …) and names that say "Глава 1.1. ...", which broke rendering.
-        // We therefore build a per-volume integer sequence (1, 2, 3, …) for the visible
-        // chapter number and keep the original name as a suffix.
+        // Authors carry name_rus/name_eng; translators carry name. Combine both as "Author / tr. Translator".
+        // Computed before the chapter loop so the first translator can be used as scanlator.
+        const authorList = (info.authors || []).map(a => a.name_rus || a.name_eng || a.name).filter(x => x);
+        const translatorList = (info.translators || []).map(t => t.name_rus || t.name_eng || t.name).filter(x => x);
+        const authorStr = authorList.join(", ") + (translatorList.length ? ` (пер. ${translatorList.join(", ")})` : "");
+        const chScanlator = translatorList[0] || "RanobeHub";
+
+        // Build chapters. Mangayomi's chapter-recognition regex (lib/utils/chapter_recognition.dart)
+        // is ASCII-only — for Cyrillic-only names it extracts the FIRST integer in the string.
+        // Pre-v0.5.0 names started with "Том {volNum}" so vol 1's 12 chapters all parsed as "1",
+        // vol 2's 28 chapters all parsed as "2", etc., colliding 20 ways for Solo Leveling.
+        // Solution: prefix every name with a globally-unique integer "Гл. {N}." before "Том X".
+        // dateUpload is forced to integer-millis (defends against int.parse crash in sortChapter==2).
+        // scanlator is set to a non-null string (defends against filter chain edge cases).
         const chapters = [];
         for (const vol of contents) {
             const vNum = vol.num != null ? vol.num : 1;
@@ -124,36 +133,29 @@ class DefaultExtension extends MProvider {
             for (let i = 0; i < volChapters.length; i++) {
                 const ch = volChapters[i];
                 const cNumApi = ch.num != null ? ch.num : "?";
-                const seqInVol = i + 1; // always integer, always unique within vol
-                // URL with a trailing `?cid=ID` to give every URL a unique integer suffix
-                // (server ignores the query; the stale-URL rescue strips ?cid before fetch).
-                const baseUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNumApi}`;
-                const chUrl = ch.id ? baseUrl + (baseUrl.indexOf("?") < 0 ? "?cid=" : "&cid=") + ch.id : baseUrl;
-                let dateUpload;
-                if (ch.changed_at) {
-                    const n = +ch.changed_at;
-                    dateUpload = (isNaN(n) ? new Date(ch.changed_at).valueOf() : n * 1000).toString();
-                } else {
-                    dateUpload = Date.now().toString();
+                const seqInVol = i + 1;
+                const chUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNumApi}`;
+                const tsRaw = ch.changed_at;
+                let tsMs;
+                if (tsRaw) {
+                    const n = +tsRaw;
+                    tsMs = isNaN(n) ? new Date(tsRaw).valueOf() : Math.floor(n) * 1000;
                 }
+                const dateUpload = (Number.isFinite(tsMs) ? tsMs : Date.now()).toString();
                 const rawName = (ch.name || "").trim();
-                // ALWAYS include "Глава {integer-seq}" so Mangayomi's chapter-number parser
-                // sees a clean integer regardless of the source's numbering scheme.
-                let chName = (vol.num ? "Том " + vNum + " · " : "") + "Глава " + seqInVol;
+                const globalSeq = chapters.length + 1;
+                let chName = "Гл. " + globalSeq + ". ";
+                if (vol.num) chName += "Том " + vNum + " · ";
+                chName += "Глава " + seqInVol;
                 if (rawName) chName += ": " + rawName;
                 chapters.push({
                     name: chName,
                     url: String(chUrl),
                     dateUpload: dateUpload,
-                    scanlator: null
+                    scanlator: chScanlator
                 });
             }
         }
-
-        // Authors carry name_rus/name_eng; translators carry name. Combine both as "Author / tr. Translator".
-        const authorList = (info.authors || []).map(a => a.name_rus || a.name_eng || a.name).filter(x => x);
-        const translatorList = (info.translators || []).map(t => t.name_rus || t.name_eng || t.name).filter(x => x);
-        const authorStr = authorList.join(", ") + (translatorList.length ? ` (пер. ${translatorList.join(", ")})` : "");
 
         // Tags are { events, genres } where each item has { title, names: { rus, eng } }.
         const tagItems = [].concat((info.tags && info.tags.genres) || [], (info.tags && info.tags.events) || []);
@@ -180,7 +182,10 @@ class DefaultExtension extends MProvider {
             author: authorStr,
             genre: genre,
             status: status,
-            chapters: chapters.slice().reverse()
+            // Insertion order = oldest first (vol 1 ch 1 → vol 20 ch N).
+            // Mangayomi's _filterAndSortChapter handles its own reverse via sortChapter==1,
+            // so we should NOT pre-reverse — doubling up confuses the global "Гл. N" sequence.
+            chapters: chapters
         };
     }
 
