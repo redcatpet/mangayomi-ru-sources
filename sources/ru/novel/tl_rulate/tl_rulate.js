@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.5",
+    "version": "0.4.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -146,14 +146,26 @@ class DefaultExtension extends MProvider {
             if (imgEl) imageUrl = this.absUrl(imgEl.attr("src") || imgEl.attr("data-src") || "");
         }
 
-        // Description — primary source is the visible div; falls back to og:description
-        // (always present, scoped to current book, but prefixed with "⭐ rating | 📖 N глав | tags | …").
+        // Description — extract from raw body via regex. Mangayomi's Document API was
+        // returning empty text for `div.book-description` despite the element existing
+        // (deeply nested <p>/<span>/<strong> markup), causing a fallback to the
+        // server-truncated og:description (~230 chars). Regex on the raw HTML body
+        // recovers the full text reliably (700-1000+ chars in practice).
         let descriptionText = "";
-        const description = doc.selectFirst("div[itemprop=description]")
-                         || doc.selectFirst("div.book-description")
-                         || doc.selectFirst("div.book-content");
-        if (description) descriptionText = description.text.trim();
+        const dm = (res.body || "").match(/<div\s+class="book-description"[^>]*>([\s\S]*?)<\/div>/);
+        if (dm) {
+            descriptionText = dm[1]
+                .replace(/<[^>]+>/g, " ")
+                .replace(/&nbsp;/g, " ")
+                .replace(/&amp;/g, "&")
+                .replace(/&quot;/g, '"')
+                .replace(/&lt;/g, "<")
+                .replace(/&gt;/g, ">")
+                .replace(/\s+/g, " ")
+                .trim();
+        }
         if (!descriptionText) {
+            // Fallback to og:description (truncated by server, but always scoped to current book).
             const ogDesc = doc.selectFirst("meta[property='og:description']");
             if (ogDesc) {
                 let d = (ogDesc.attr("content") || "").trim();
