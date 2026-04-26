@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.7",
+    "version": "0.3.8",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -99,7 +99,14 @@ class DefaultExtension extends MProvider {
             const vNum = vol.num != null ? vol.num : 1;
             for (const ch of (vol.chapters || [])) {
                 const cNum = ch.num != null ? ch.num : "?";
-                const chUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNum}`;
+                // Append chapter ID as query so every URL ends with a unique integer.
+                // Solo Leveling has 398/457 chapters with float `num` (1.01, 1.02 …) — URLs
+                // therefore end in "/{vol}/{1.01}" etc., and Mangayomi's chapter sort/dedup
+                // regex (likely `/\d+$/`) extracts only "01" → integer 1, colliding with
+                // chapter 1 in the same volume. A trailing `?cid={id}` ensures the regex
+                // sees the chapter ID (always unique integer); the server ignores the query.
+                const baseUrl = ch.url || `${this.source.baseUrl}/ranobe/${ranobeId}/${vNum}/${cNum}`;
+                const chUrl = ch.id ? baseUrl + (baseUrl.indexOf("?") < 0 ? "?cid=" : "&cid=") + ch.id : baseUrl;
                 let dateUpload;
                 if (ch.changed_at) {
                     const n = +ch.changed_at;
@@ -164,27 +171,32 @@ class DefaultExtension extends MProvider {
     }
 
     async resolveStaleChapterUrl(url) {
+        if (!url || !url.match) return url;
         // Pre-v0.3 of this extension stored chapter URLs as
         // `${apiUrl}/ranobe/{ranobeId}/chapters/{chapterId}` — that JSON endpoint now 404s.
         // Mangayomi caches chapter URLs in its local DB and won't refresh them on getDetail
         // unless the user removes & re-adds the title. Rescue: detect the broken pattern,
         // resolve the chapter ID against the contents API, and fall through to the
         // canonical HTML URL.
-        const m = url && url.match && url.match(/\/api\/ranobe\/(\d+)\/chapters\/(\d+)/);
-        if (!m) return url;
-        const ranobeId = m[1];
-        const chapterId = m[2];
-        try {
-            const res = await this.client.get(`${this.source.apiUrl}/ranobe/${ranobeId}/contents`, this.headers);
-            if (res.statusCode !== 200) return url;
-            const data = JSON.parse(res.body);
-            for (const vol of (data.volumes || [])) {
-                for (const ch of (vol.chapters || [])) {
-                    if (String(ch.id) === chapterId && ch.url) return ch.url;
+        const m = url.match(/\/api\/ranobe\/(\d+)\/chapters\/(\d+)/);
+        if (m) {
+            const ranobeId = m[1];
+            const chapterId = m[2];
+            try {
+                const res = await this.client.get(`${this.source.apiUrl}/ranobe/${ranobeId}/contents`, this.headers);
+                if (res.statusCode !== 200) return url;
+                const data = JSON.parse(res.body);
+                for (const vol of (data.volumes || [])) {
+                    for (const ch of (vol.chapters || [])) {
+                        if (String(ch.id) === chapterId && ch.url) return ch.url;
+                    }
                 }
-            }
-        } catch (e) {}
-        return url;
+            } catch (e) {}
+            return url;
+        }
+        // Strip our own `?cid=` / `&cid=` disambiguator before fetching (server ignores
+        // it but stripping avoids ambiguity in logs).
+        return url.replace(/[?&]cid=\d+/, "");
     }
 
     async getHtmlContent(name, url) {
