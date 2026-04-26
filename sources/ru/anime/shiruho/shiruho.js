@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.2.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/shiruho.js",
@@ -300,7 +300,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
-    async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
+    async getLatestUpdates(page) { return await this.fetchListByOrder("LAST_EPISODE_AT", page); }
 
     // Map result of `search(query, type)` (SearchAnime inline-fragment nodes).
     mapSearchEdges(edges) {
@@ -463,8 +463,10 @@ class DefaultExtension extends MProvider {
                 values: [
                     ["По популярности", "POPULARITY_SCORE"],
                     ["По рейтингу", "SCORE"],
+                    ["По количеству эпизодов", "EPISODES"],
                     ["По просмотрам", "VIEWS"],
-                    ["По дате добавления", "CREATED_AT"]
+                    ["По дате создания", "CREATED_AT"],
+                    ["По новым эпизодам", "LAST_EPISODE_AT"]
                 ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
             },
             {

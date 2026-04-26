@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.3.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
@@ -327,7 +327,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
-    async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
+    async getLatestUpdates(page) { return await this.fetchListByOrder("LAST_CHAPTER_AT", page); }
 
     // Map result of `search(query, type)` operation. Returns SearchManga inline-fragment
     // nodes; we additionally filter by rating (the search op doesn't accept rating filter,
@@ -490,8 +490,10 @@ class DefaultExtension extends MProvider {
                 values: [
                     ["По популярности", "POPULARITY_SCORE"],
                     ["По рейтингу", "SCORE"],
+                    ["По количеству глав", "CHAPTERS"],
                     ["По просмотрам", "VIEWS"],
-                    ["По дате добавления", "CREATED_AT"]
+                    ["По дате создания", "CREATED_AT"],
+                    ["По дате залива (последняя глава)", "LAST_CHAPTER_AT"]
                 ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
             },
             {
