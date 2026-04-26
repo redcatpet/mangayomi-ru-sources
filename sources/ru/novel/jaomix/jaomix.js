@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.1",
+    "version": "0.3.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/jaomix.js",
@@ -137,22 +137,52 @@ class DefaultExtension extends MProvider {
     async getDetail(url) {
         const res = await this.client.get(this.absUrl(url), this.headers);
         const doc = new Document(res.body);
-        const nameEl = doc.selectFirst("h1") || doc.selectFirst("h1.entry-title");
+        const nameEl = doc.selectFirst("h1.entry-title") || doc.selectFirst("h1");
         const name = nameEl ? nameEl.text.trim() : url;
-        const imgEl = doc.selectFirst("div.img-book img")
-                   || doc.selectFirst("div.thumb-book img")
-                   || doc.selectFirst("article img")
-                   || doc.selectFirst("meta[property=og:image]");
+
+        // Cover — prefer og:image (high-res original) over the small thumbnail in
+        // div.img-book/div.thumb-book that the user reported as "shakal quality".
         let imageUrl = "";
-        if (imgEl) {
-            imageUrl = imgEl.attr("data-src") || imgEl.attr("src") || imgEl.attr("content") || "";
-            imageUrl = this.absUrl(imageUrl);
+        const og = doc.selectFirst("meta[property='og:image']");
+        if (og) imageUrl = this.absUrl(og.attr("content") || "");
+        if (!imageUrl) {
+            const imgEl = doc.selectFirst("div.img-book img")
+                       || doc.selectFirst("div.thumb-book img")
+                       || doc.selectFirst("article img");
+            if (imgEl) imageUrl = this.absUrl(imgEl.attr("data-src") || imgEl.attr("src") || "");
         }
-        const descEl = doc.selectFirst("div.book-desc")
+
+        // Description — schema.org `itemprop=description` is the actual selector on
+        // current Jaomix pages; the legacy book-desc/description selectors don't
+        // exist anymore. og:description has a noisy "Бесплатно X глав произведения
+        // {title}? |" prefix and is truncated, so it's a last resort.
+        let description = "";
+        const descEl = doc.selectFirst("div[itemprop=description]")
+                    || doc.selectFirst("div.book-desc")
                     || doc.selectFirst("section.description")
-                    || doc.selectFirst("div.description")
-                    || doc.selectFirst("meta[name=description]");
-        const description = descEl ? (descEl.text || descEl.attr("content") || "").trim() : "";
+                    || doc.selectFirst("div.description");
+        if (descEl) description = (descEl.text || "").trim();
+        if (!description) {
+            const ogDesc = doc.selectFirst("meta[property='og:description']");
+            if (ogDesc) {
+                let d = (ogDesc.attr("content") || "").trim();
+                // Strip "Бесплатно N глав произведения Title? | " prefix.
+                d = d.replace(/^Бесплатно\s+\d+\s+глав\s+произведения\s+[^|]*\|\s*/i, "");
+                description = d;
+            }
+        }
+
+        // Author — Jaomix uses plain "<p>Автор: Name</p>" pattern; no class to grab.
+        // Walk paragraphs and pick the one whose text starts with "Автор:".
+        let author = "";
+        const ps = doc.select("p, span, div");
+        for (const p of ps) {
+            const t = (p.text || "").trim();
+            if (t.length > 100) continue;
+            const m = t.match(/^Автор:\s*(.+?)\s*$/i);
+            if (m) { author = m[1]; break; }
+        }
+
         const genre = doc.select("a[rel=tag], a[href*='/genre/'], .tags-block a").map(e => e.text.trim()).filter(x => x);
 
         // Chapters: visible `div.columns-toc > div.flex-dow-txt > div.title > a`
@@ -176,7 +206,7 @@ class DefaultExtension extends MProvider {
             });
         }
 
-        return { name, imageUrl, description, genre, status: 5, chapters: chapters };
+        return { name, imageUrl, description, author, genre, status: 5, chapters: chapters };
     }
 
     async getHtmlContent(name, url) {
