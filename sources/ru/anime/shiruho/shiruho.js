@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.3",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/shiruho.js",
@@ -19,11 +19,40 @@ const mangayomiSources = [{
 
 const SH_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
+// Curated anime genre list (slug → Russian name). Sourced from
+// `query allLabels(subjectType:ANIME)` filtered to depth=1.
+const SH_GENRES = [
+    ["action", "Боевик"], ["martial_arts", "Боевые искусства"], ["vampire", "Вампиры"],
+    ["military", "Военное"], ["harem", "Гарем"], ["detective", "Детектив"],
+    ["josei", "Дзёсей"], ["drama", "Драма"], ["historical", "Исторический"],
+    ["isekai", "Исекай"], ["comedy", "Комедия"], ["space", "Космос"],
+    ["magic", "Магия"], ["mecha", "Меха"], ["mystery", "Мистика"], ["music", "Музыка"],
+    ["slice_of_life", "Повседневность"], ["adventure", "Приключения"],
+    ["psychological", "Психологическое"], ["parody", "Пародия"],
+    ["romance", "Романтика"], ["samurai", "Самураи"],
+    ["supernatural", "Сверхъестественное"], ["shoujo", "Сёдзё"],
+    ["shounen", "Сёнен"], ["sport", "Спорт"], ["seinen", "Сэйнэн"],
+    ["thriller", "Триллер"], ["horror", "Ужасы"], ["sci_fi", "Фантастика"],
+    ["fantasy", "Фэнтези"], ["school", "Школа"], ["ecchi", "Этти"],
+    ["yuri", "Юри"], ["yaoi", "Яой"]
+];
+
+const SH_STATUSES = [
+    ["— Любой —", ""], ["Онгоинг", "ONGOING"], ["Завершён", "FINISHED"],
+    ["Анонс", "ANNOUNCE"]
+];
+const SH_FORMATS = [
+    ["— Любой —", ""], ["TV", "TV"], ["TV Special", "TV_SPECIAL"], ["Movie (фильм)", "MOVIE"],
+    ["OVA", "OVA"], ["ONA", "ONA"], ["Прочее", "OTHER"]
+];
+const SH_SEASONS = [
+    ["— Любой —", ""], ["Зима", "WINTER"], ["Весна", "SPRING"],
+    ["Лето", "SUMMER"], ["Осень", "FALL"]
+];
+
 // ---- GraphQL queries (extracted from main bundle index-DMbBzR3F.js) ----
-//
-// Catalog/search. AnimeOrderField enum: POPULARITY_SCORE | SCORE | VIEWS | CREATED_AT.
-const Q_ANIMES = `query fetchAnimes($first: Int = 30, $after: String, $search: String, $orderField: AnimeOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
-  animes(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
+const Q_ANIMES = `query fetchAnimes($first: Int = 30, $after: String, $search: String, $status: AnimeStatusFilter, $format: AnimeFormatFilter, $season: AnimeSeasonFilter, $label: AnimeLabelFilter, $orderField: AnimeOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
+  animes(first: $first, after: $after, search: $search, status: $status, format: $format, season: $season, label: $label, orderBy: {field: $orderField, direction: $orderDirection}) {
     edges { node { id slug type status titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
   }
@@ -207,14 +236,50 @@ class DefaultExtension extends MProvider {
         }).filter(x => x.name && x.link);
     }
 
-    async fetchListByOrder(field, page) {
-        // Cursor pagination — emulate page-based by walking from p=1.
+    // Translate Mangayomi filter UI state → GraphQL variables.
+    // Slot map: [0] Sort, [1] Status, [2] Format, [3] Season, [4] Genres
+    parseFilters(filters) {
+        const out = { orderField: "POPULARITY_SCORE", orderDirection: "DESC" };
+        if (!filters || !filters.length) return out;
+        if (filters[0] && filters[0].values && filters[0].state) {
+            const idx = filters[0].state.index != null ? filters[0].state.index : 0;
+            out.orderField = filters[0].values[idx].value || out.orderField;
+            out.orderDirection = filters[0].state.ascending ? "ASC" : "DESC";
+        }
+        if (filters[1] && filters[1].values) {
+            const v = filters[1].values[filters[1].state || 0].value;
+            if (v) out.status = { include: [v] };
+        }
+        if (filters[2] && filters[2].values) {
+            const v = filters[2].values[filters[2].state || 0].value;
+            if (v) out.format = { include: [v] };
+        }
+        if (filters[3] && filters[3].values) {
+            const v = filters[3].values[filters[3].state || 0].value;
+            if (v) out.season = { include: [v] };
+        }
+        if (filters[4] && Array.isArray(filters[4].state)) {
+            const include = [], exclude = [];
+            for (const t of filters[4].state) {
+                if (t.state === 1) include.push(t.value);
+                else if (t.state === 2) exclude.push(t.value);
+            }
+            if (include.length || exclude.length) {
+                out.label = {};
+                if (include.length) out.label.include = include;
+                if (exclude.length) out.label.exclude = exclude;
+            }
+        }
+        return out;
+    }
+
+    async fetchListByOrder(field, page, extraVars) {
         let after = null;
         for (let i = 1; i <= page; i++) {
-            const r = await this.gql("fetchAnimes", Q_ANIMES, { first: 30, after, orderField: field, orderDirection: "DESC" });
+            const vars = Object.assign({ first: 30, after, orderField: field, orderDirection: "DESC" }, extraVars || {});
+            const r = await this.gql("fetchAnimes", Q_ANIMES, vars);
             if (r.error || !r.data || !r.data.animes) {
                 if (page === 1) {
-                    // Surface error so user sees what's wrong.
                     return {
                         list: [{
                             name: `[Shiruho error] ${r.error || "no data"}`,
@@ -253,21 +318,22 @@ class DefaultExtension extends MProvider {
     async search(query, page, filters) {
         const q = (query || "").trim();
         // Text search: top-level `search` operation indexes ALL title localizations.
-        // The `animes(search:)` filter only matches `originalName` and misses Russian
-        // queries (e.g. "Синяя тюрьма" returns nothing while "blue lock" finds it).
+        // The `animes(search:)` filter only matches `originalName` (e.g. "Синяя тюрьма"
+        // returns nothing while "blue lock" finds it).
         if (q) {
             const r = await this.gql("search", Q_SEARCH, { query: q, first: 50 });
             if (r.error || !r.data) return { list: [], hasNextPage: false };
             const edges = (r.data.search && r.data.search.edges) || [];
             return { list: this.mapSearchEdges(edges), hasNextPage: false };
         }
-        // No query: catalog with sort filter.
-        let orderField = "POPULARITY_SCORE";
-        if (filters && filters[0] && filters[0].values) {
-            const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
-            orderField = filters[0].values[idx].value || orderField;
-        }
-        return await this.fetchListByOrder(orderField, page);
+        // Empty query: catalog with sort + status/format/season/genre filters applied.
+        const f = this.parseFilters(filters);
+        const extra = {};
+        if (f.status) extra.status = f.status;
+        if (f.format) extra.format = f.format;
+        if (f.season) extra.season = f.season;
+        if (f.label) extra.label = f.label;
+        return await this.fetchListByOrder(f.orderField, page, Object.assign({ orderDirection: f.orderDirection }, extra));
     }
 
     async getDetail(slug) {
@@ -400,6 +466,33 @@ class DefaultExtension extends MProvider {
                     ["По просмотрам", "VIEWS"],
                     ["По дате добавления", "CREATED_AT"]
                 ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "status",
+                name: "Статус",
+                state: 0,
+                values: SH_STATUSES.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "format",
+                name: "Формат",
+                state: 0,
+                values: SH_FORMATS.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "season",
+                name: "Сезон",
+                state: 0,
+                values: SH_SEASONS.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "genres",
+                name: "Жанры (тап = включить, ещё тап = исключить)",
+                state: SH_GENRES.map(x => ({ type_name: "TriState", name: x[1], value: x[0] }))
             }
         ];
     }

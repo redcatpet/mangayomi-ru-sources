@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.5",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -17,12 +17,44 @@ const mangayomiSources = [{
 
 const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
 
+// Curated genre list — slug → Russian display name. Sourced from
+// `query allLabels(subjectType:MANGA){slug depth titles{lang content}}` filtered to depth=1.
+// Trimmed to ~50 popular ones; the full list is 248 entries which would be unwieldy in UI.
+const SK_GENRES = [
+    ["angel", "Ангел"], ["dystopia", "Антиутопия"], ["bdsm", "БДСМ"], ["god", "Бог"],
+    ["ojou_sama", "Богатая леди"], ["vampire", "Вампир"], ["witch", "Ведьма"],
+    ["military", "Военное"], ["survival", "Выживание"], ["female_protagonist", "ГГ женщина"],
+    ["overpowered_protagonist", "ГГ имба"], ["male_protagonist", "ГГ мужчина"],
+    ["josei", "Дзёсей"], ["dragon", "Драконы"], ["drama", "Драма"], ["zombie", "Зомби"],
+    ["rape", "Изнасилование"], ["art", "Искусство"], ["historical", "Исторический"],
+    ["comedy", "Комедия"], ["space", "Космос"], ["magic", "Магия"], ["mecha", "Меха"],
+    ["milf", "Милфы"], ["mystery", "Мистика"], ["music", "Музыка"],
+    ["slice_of_life", "Повседневность"], ["crime", "Преступления"], ["adventure", "Приключения"],
+    ["psychological", "Психологическое"], ["reincarnation", "Реинкарнация"],
+    ["romance", "Романтика"], ["samurai", "Самурай"], ["supernatural", "Сверхъестественное"],
+    ["shoujo", "Сёдзе"], ["shoujo_ai", "Сёдзе-ай"], ["shounen", "Сёнен"],
+    ["shounen_ai", "Сёнен-ай"], ["sport", "Спорт"], ["seinen", "Сэйнэн"],
+    ["thriller", "Триллер"], ["horror", "Ужасы"], ["sci_fi", "Фантастика"],
+    ["futanari", "Футанари"], ["fantasy", "Фэнтези"], ["hentai", "Хентай"],
+    ["school", "Школа"], ["action", "Экшен"], ["ecchi", "Этти"],
+    ["yuri", "Юри"], ["yaoi", "Яой"]
+];
+
+const SK_TYPES = [
+    ["— Любой —", ""], ["Манга (JP)", "MANGA"], ["Манхва (KR)", "MANHWA"],
+    ["Маньхуа (CN)", "MANHUA"], ["Комиксы", "COMICS"], ["OEL Манга", "OEL_MANGA"]
+];
+const SK_STATUSES = [
+    ["— Любой —", ""], ["Онгоинг", "ONGOING"], ["Завершён", "FINISHED"],
+    ["Заморожен", "FROZEN"], ["Заброшен", "DROPPED"], ["Анонс", "ANNOUNCEMENT"]
+];
+
 // ---- GraphQL queries (extracted from the app's main bundle) ----
 //
-// Catalog/search. The server's "mangas" query supports many filters; we expose the most
-// useful ones (search text, order). orderField enum: SCORE | VIEWS | CREATED_AT | POPULARITY_SCORE.
-const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: String, $orderField: MangaOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
-  mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
+// Catalog/search. orderField enum: SCORE | VIEWS | CREATED_AT | POPULARITY_SCORE.
+// Filters (status/type/format/label) all use the same `{include:[...], exclude:[...]}` shape.
+const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: String, $status: MangaStatusFilter, $type: MangaTypeFilter, $format: MangaFormatFilter, $label: MangaLabelFilter, $orderField: MangaOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
+  mangas(first: $first, after: $after, search: $search, status: $status, type: $type, format: $format, label: $label, orderBy: {field: $orderField, direction: $orderDirection}) {
     edges { node { id slug type rating titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
   }
@@ -221,17 +253,54 @@ class DefaultExtension extends MProvider {
         }).filter(x => x.name && x.link);
     }
 
-    async fetchListByOrder(field, page) {
+    // Translate Mangayomi filter UI state into GraphQL variables. Returns
+    // `{status, type, format, label, orderField, orderDirection}` — any of which
+    // may be undefined (means "don't filter on this dimension").
+    parseFilters(filters) {
+        const out = { orderField: "POPULARITY_SCORE", orderDirection: "DESC" };
+        if (!filters || !filters.length) return out;
+        // [0] SortFilter
+        if (filters[0] && filters[0].values && filters[0].state) {
+            const idx = filters[0].state.index != null ? filters[0].state.index : 0;
+            out.orderField = filters[0].values[idx].value || out.orderField;
+            out.orderDirection = filters[0].state.ascending ? "ASC" : "DESC";
+        }
+        // [1] Type SelectFilter
+        if (filters[1] && filters[1].values) {
+            const v = filters[1].values[filters[1].state || 0].value;
+            if (v) out.type = { include: [v] };
+        }
+        // [2] Status SelectFilter
+        if (filters[2] && filters[2].values) {
+            const v = filters[2].values[filters[2].state || 0].value;
+            if (v) out.status = { include: [v] };
+        }
+        // [3] Genres GroupFilter (TriState)
+        if (filters[3] && Array.isArray(filters[3].state)) {
+            const include = [], exclude = [];
+            for (const t of filters[3].state) {
+                if (t.state === 1) include.push(t.value);
+                else if (t.state === 2) exclude.push(t.value);
+            }
+            if (include.length || exclude.length) {
+                out.label = {};
+                if (include.length) out.label.include = include;
+                if (exclude.length) out.label.exclude = exclude;
+            }
+        }
+        return out;
+    }
+
+    async fetchListByOrder(field, page, extraVars) {
         // Senkuro uses cursor-based pagination — emulate page-based by walking from p=1.
         // For p>1 we re-walk from start (Mangayomi catalog scrolls page-by-page so this
         // is acceptable: each page is one extra round-trip).
         let after = null;
         for (let i = 1; i <= page; i++) {
-            const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC" });
+            const vars = Object.assign({ first: 30, after, orderField: field, orderDirection: "DESC" }, extraVars || {});
+            const r = await this.gql("fetchMangas", Q_MANGAS, vars);
             if (r.error || !r.data || !r.data.mangas) {
                 if (page === 1) {
-                    // Surface the error to the user via a single fake "result" so they
-                    // see WHAT is wrong (not just "0 results").
                     return {
                         list: [{
                             name: `[Senkuro error] ${r.error || "no data"}`,
@@ -274,21 +343,22 @@ class DefaultExtension extends MProvider {
         // Text search: use the top-level `search` operation, which actually indexes
         // every title localization (Cyrillic, Latin, Japanese all match). The
         // `mangas(search:)` filter only matches `originalName` and misses Russian queries.
+        // Trade-off: the `search` op doesn't accept catalog filters (status/type/genres),
+        // so when both query AND filters are set we still prefer text search — the
+        // filters are silently ignored for the query-driven branch.
         if (q) {
             const r = await this.gql("search", Q_SEARCH, { query: q, first: 30 });
             if (r.error || !r.data) return { list: [], hasNextPage: false };
             const edges = (r.data.search && r.data.search.edges) || [];
             return { list: this.mapSearchEdges(edges), hasNextPage: false };
         }
-        // No query: fall back to the catalog with sort filter applied.
-        let orderField = "POPULARITY_SCORE";
-        let orderDirection = "DESC";
-        if (filters && filters[0] && filters[0].values) {
-            const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
-            orderField = filters[0].values[idx].value || orderField;
-            orderDirection = (filters[0].state && filters[0].state.ascending) ? "ASC" : "DESC";
-        }
-        return await this.fetchListByOrder(orderField, page);
+        // Empty query: catalog with sort + status/type/genre filters applied.
+        const f = this.parseFilters(filters);
+        const extra = {};
+        if (f.status) extra.status = f.status;
+        if (f.type) extra.type = f.type;
+        if (f.label) extra.label = f.label;
+        return await this.fetchListByOrder(f.orderField, page, Object.assign({ orderDirection: f.orderDirection }, extra));
     }
 
     async getDetail(slug) {
@@ -419,6 +489,26 @@ class DefaultExtension extends MProvider {
                     ["По просмотрам", "VIEWS"],
                     ["По дате добавления", "CREATED_AT"]
                 ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "type",
+                name: "Тип",
+                state: 0,
+                values: SK_TYPES.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "SelectFilter",
+                type: "status",
+                name: "Статус",
+                state: 0,
+                values: SK_STATUSES.map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            },
+            {
+                type_name: "GroupFilter",
+                type: "genres",
+                name: "Жанры (тап = включить, ещё тап = исключить)",
+                state: SK_GENRES.map(x => ({ type_name: "TriState", name: x[1], value: x[0] }))
             }
         ];
     }
