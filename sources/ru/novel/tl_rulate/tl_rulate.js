@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.4",
+    "version": "0.4.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -164,19 +164,35 @@ class DefaultExtension extends MProvider {
             }
         }
 
-        // Author — site uses `<p><strong>Автор:</strong> <em><a href="/search?from=book&t=...">Name</a></em></p>`.
+        // Pull every "<strong>Field:</strong> <em>Value</em>" pair into a map for cheap lookup.
+        // The detail page uses this pattern for Автор / Выпуск / Группа / Жанры / Альт. название etc.
+        const fields = {};
+        for (const p of doc.select("p")) {
+            const strong = p.selectFirst("strong");
+            if (!strong) continue;
+            const label = strong.text.replace(":", "").trim();
+            if (!label) continue;
+            const em = p.selectFirst("em");
+            const value = (em ? em.text : p.text.replace(strong.text, "")).replace(/\s+/g, " ").trim();
+            if (value) fields[label] = { text: value, em: em };
+        }
+
+        // Author: prefer "Автор" / "Автор оригинала"; fall back to translation team ("Группа")
+        // so fanfic translations without a listed original author don't show "Неизвестно".
         let author = "";
-        const authorAnchor = doc.selectFirst("a[href*='/search?from=book&t=']");
-        if (authorAnchor) author = authorAnchor.text.trim();
-        if (!author) {
-            // Last resort — scan paragraphs for one whose <strong> says "Автор:".
-            const ps = doc.select("p");
-            for (const p of ps) {
-                const strong = p.selectFirst("strong");
-                if (!strong || strong.text.indexOf("Автор") < 0) continue;
-                const a = p.selectFirst("em a") || p.selectFirst("a");
-                if (a) { author = a.text.trim(); break; }
-            }
+        const authorField = fields["Автор"] || fields["Автор оригинала"];
+        if (authorField) author = authorField.text;
+        if (!author && fields["Группа"]) author = fields["Группа"].text;
+
+        // Status: map "Выпуск" string into Mangayomi's enum (0=ongoing, 1=completed, 2=hiatus, 3=cancelled, 5=unknown).
+        let status = 5;
+        const statusField = fields["Выпуск"];
+        if (statusField) {
+            const s = statusField.text.toLowerCase();
+            if (s.indexOf("продолж") >= 0 || s.indexOf("процесс") >= 0 || s.indexOf("онгоинг") >= 0) status = 0;
+            else if (s.indexOf("заверш") >= 0 || s.indexOf("переведён") >= 0 || s.indexOf("переведен") >= 0) status = 1;
+            else if (s.indexOf("приостан") >= 0 || s.indexOf("заморож") >= 0) status = 2;
+            else if (s.indexOf("заброш") >= 0 || s.indexOf("брошен") >= 0) status = 3;
         }
 
         // Genres listed under <strong>Жанры:</strong> with `/search?genres[0]=N` (URL-encoded) anchors,
@@ -213,7 +229,7 @@ class DefaultExtension extends MProvider {
             description: descriptionText,
             author: author,
             genre: genre,
-            status: 5,
+            status: status,
             chapters: chapters
         };
     }
