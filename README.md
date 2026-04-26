@@ -1,6 +1,6 @@
 # Mangayomi RU Sources
 
-Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **27 русских источников** манги, аниме и новелл.
+Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **28 русских источников** манги, аниме и новелл.
 
 Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, AniLib/MangaLib (новые .org-домены), Animesss, YummyAnime, Anixart, Ранобэ.рф и др.
 
@@ -14,8 +14,8 @@
 
 | Что подключить | URL |
 |---|---|
-| **Всё (27 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
-| Только манга (10) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
+| **Всё (28 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
+| Только манга (11) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
 | Только аниме (11) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
 | Только новеллы (6) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
 
@@ -25,7 +25,7 @@
 
 ---
 
-## Реальный статус (v0.7.2, проверено через E2E с фактической загрузкой контента)
+## Реальный статус (v0.8.0, проверено через E2E с фактической загрузкой контента)
 
 E2E-харнес (`_scratch/e2e_real.js`) для каждого источника:
 1. Запрашивает `getPopular` — должен вернуть список
@@ -33,17 +33,21 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 3. **Реально fetch'ит первую страницу/видео** и проверяет MIME (image/*, m3u8, mp4, html >800B)
 4. Если контент — заглушка (deleted1.png, censored stub, pixel.png) — это FAIL
 
+**Итог: 22/28 источников отдают реальный контент с EU IP** (с RU IP больше — гео-блоки снимаются).
+
 ### ✅ Полностью работают (отдают реальный контент):
 
 **Аниме (10):** AniLibria · Animedia · AnimeGO · AnimeJoy · AniLib · Animeshka · **Animesss** · AnimeVost · Anixart · **YummyAnime**
 
-**Манга (6):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga
+**Манга (7):** Acomics · Desu.Me · MangaBuff · ReadManga · Remanga · SelfManga · **Senkuro** ⭐
 
 **Новеллы (5):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф · Tl.Rulate
 
-> **v0.7.2 hotfix** (Ranobe-секция): Tl.Rulate каталог восстановлен (регрессия v0.4.0 — фильтр-параметры путали сервер); RanobeHub детальная страница больше не показывает `[object Object]` в авторе и сырой JSON в жанрах; Jaomix парсер стал устойчивее к смене вёрстки (трёхуровневый fallback).
+> **v0.8.0**: добавлен **Senkuro** (manga). GraphQL API `api.senkuro.com/graphql` — каталог + детали + страницы глав через WebP-CDN с подписанными ссылками. E2E подтверждён: 30 каталог, 21 глава, 624KB WebP первая страница.
 >
-> **v0.7.3**: Litnet удалён (нейрослоп / низкое качество контента — не оправдывает поддержку CF + Angular SSR). Senkuro WIP — добавится после реверса API.
+> **v0.7.3**: Litnet удалён (нейрослоп / низкое качество контента — не оправдывает поддержку CF + Angular SSR).
+>
+> **v0.7.2 hotfix**: Tl.Rulate каталог восстановлен (регрессия v0.4.0 — фильтр-параметры путали сервер); RanobeHub детальная страница больше не показывает `[object Object]` в авторе и сырой JSON в жанрах; Jaomix парсер стал устойчивее к смене вёрстки (трёхуровневый fallback).
 
 ### ⚠ Частично работают (нужен токен / cookie / RU IP)
 

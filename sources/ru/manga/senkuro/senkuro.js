@@ -1,0 +1,317 @@
+const mangayomiSources = [{
+    "name": "Senkuro",
+    "lang": "ru",
+    "baseUrl": "https://senkuro.com",
+    "apiUrl": "https://api.senkuro.com/graphql",
+    "iconUrl": "",
+    "typeSource": "single",
+    "itemType": 0,
+    "isNsfw": false,
+    "hasCloudflare": true,
+    "version": "0.1.0",
+    "dateFormat": "",
+    "dateFormatLocale": "",
+    "pkgPath": "ru/manga/senkuro.js",
+    "notes": "GraphQL API api.senkuro.com/graphql. Сайт может требовать сессию для не-PG контента — вставь cookie из DevTools → Application → Cookies на senkuro.com (поле session_cookie). Геоблок для не-RU IP."
+}];
+
+const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+
+// ---- GraphQL queries (extracted from the app's main bundle) ----
+//
+// Catalog/search. The server's "mangas" query supports many filters; we expose the most
+// useful ones (search text, order). orderField enum: SCORE | VIEWS | CREATED_AT | POPULARITY_SCORE.
+const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: String, $orderField: MangaOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
+  mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
+    edges { node { id slug type rating titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+// Manga detail by slug. Branch has `primaryTeamActivities` (NOT a direct `team` field).
+const Q_MANGA = `query fetchManga($slug: String!) {
+  manga(slug: $slug) {
+    id slug type status rating score views chapters
+    originalName { lang content }
+    titles { lang content }
+    alternativeNames { lang content }
+    labels { id slug titles { lang content } }
+    mainStaff { roles person { name } }
+    cover { main: resize(width: 600, height: 850, format: WEBP) { url } }
+    branches {
+      id lang chapters primaryBranch
+      primaryTeamActivities { team { id name } }
+    }
+  }
+}`;
+
+// Chapter list — paginated by branchId.
+const Q_CHAPTERS = `query fetchMangaChapters($branchId: ID!, $after: String, $orderBy: MangaChapterOrder!) {
+  mangaChapters(first: 100, branchId: $branchId, after: $after, orderBy: $orderBy) {
+    edges { node { id slug name number volume createdAt } }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+// Chapter pages by slug. Senkuro caps quality<=80; 1200px max width.
+const Q_CHAPTER = `query fetchMangaChapter($slug: String!, $cdnQuality: String) {
+  mangaChapter(slug: $slug) {
+    id slug name number volume
+    pages(cdnQuality: $cdnQuality) {
+      number
+      image {
+        original { url width height }
+        compress: resize(width: 1200, quality: 80, format: WEBP) { url }
+      }
+    }
+  }
+}`;
+
+class DefaultExtension extends MProvider {
+    constructor() {
+        super();
+        this.client = new Client();
+    }
+
+    get gqlHeaders() {
+        const h = {
+            "User-Agent": SK_UA,
+            "Accept": "application/graphql-response+json, application/json, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
+            "Content-Type": "application/json",
+            "Origin": this.source.baseUrl,
+            "Referer": this.source.baseUrl + "/"
+        };
+        const cookie = (new SharedPreferences()).get("session_cookie");
+        if (cookie && cookie.trim()) h["Cookie"] = cookie.trim();
+        return h;
+    }
+
+    async gql(operationName, query, variables) {
+        const body = JSON.stringify({ operationName, query, variables: variables || {} });
+        const res = await this.client.post(this.source.apiUrl, this.gqlHeaders, body);
+        if (!res || res.statusCode !== 200) {
+            return { error: `HTTP ${res ? res.statusCode : "?"}` };
+        }
+        try {
+            const j = JSON.parse(res.body);
+            if (j.errors) return { error: (j.errors[0] && j.errors[0].message) || "graphql error" };
+            return { data: j.data };
+        } catch (e) { return { error: "parse error" }; }
+    }
+
+    pickTitle(titles, originalName) {
+        // Prefer Russian, fall back to English, then original.
+        if (Array.isArray(titles)) {
+            const ru = titles.find(t => t && t.lang === "RU");
+            if (ru && ru.content) return ru.content;
+            const en = titles.find(t => t && t.lang === "EN");
+            if (en && en.content) return en.content;
+            if (titles[0] && titles[0].content) return titles[0].content;
+        }
+        if (originalName && originalName.content) return originalName.content;
+        return "";
+    }
+
+    parseStatus(s) {
+        if (s === "ONGOING") return 0;
+        if (s === "FINISHED") return 1;
+        if (s === "FROZEN") return 2;
+        if (s === "DROPPED") return 3;
+        if (s === "ANNOUNCEMENT" || s === "PLANNED") return 4;
+        return 5;
+    }
+
+    coverUrl(cover) {
+        if (!cover) return "";
+        if (cover.main && cover.main.url) return cover.main.url;
+        return "";
+    }
+
+    mapEdges(edges) {
+        return (edges || []).map(e => {
+            const n = e.node || {};
+            return {
+                name: this.pickTitle(n.titles, n.originalName),
+                imageUrl: this.coverUrl(n.cover),
+                link: n.slug || n.id || ""
+            };
+        }).filter(x => x.name && x.link);
+    }
+
+    async fetchListByOrder(field, page) {
+        // Senkuro uses cursor-based pagination — emulate page-based by chaining first=30.
+        // For p=1 use no "after"; for p>1 walk from cached cursor via the pageInfo of p=1 onward.
+        // Mangayomi calls getPopular(1), getPopular(2), … — we cache the cursor inside instance.
+        const cacheKey = `__cursor_${field}_${page}`;
+        let after = null;
+        if (page > 1) after = this[cacheKey - 1] || null; // attempted lookup; fallback to none
+        const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC" });
+        if (r.error || !r.data) return { list: [], hasNextPage: false };
+        const conn = r.data.mangas || {};
+        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+    }
+
+    async getPopular(page) { return await this.fetchListByOrder("POPULARITY_SCORE", page); }
+    async getLatestUpdates(page) { return await this.fetchListByOrder("CREATED_AT", page); }
+
+    async search(query, page, filters) {
+        const q = (query || "").trim();
+        // Sort filter
+        let orderField = "POPULARITY_SCORE";
+        let orderDirection = "DESC";
+        if (filters && filters[0] && filters[0].values) {
+            const idx = (filters[0].state && filters[0].state.index != null) ? filters[0].state.index : 0;
+            orderField = filters[0].values[idx].value || orderField;
+            orderDirection = (filters[0].state && filters[0].state.ascending) ? "ASC" : "DESC";
+        }
+        const r = await this.gql("fetchMangas", Q_MANGAS, {
+            first: 30,
+            search: q || null,
+            orderField,
+            orderDirection
+        });
+        if (r.error || !r.data) return { list: [], hasNextPage: false };
+        const conn = r.data.mangas || {};
+        return { list: this.mapEdges(conn.edges), hasNextPage: !!(conn.pageInfo && conn.pageInfo.hasNextPage) };
+    }
+
+    async getDetail(slug) {
+        const r = await this.gql("fetchManga", Q_MANGA, { slug });
+        if (r.error || !r.data || !r.data.manga) {
+            return { name: slug, imageUrl: "", description: `(Ошибка GraphQL: ${r.error || "нет данных"})`, status: 5, genre: [], chapters: [] };
+        }
+        const m = r.data.manga;
+        const name = this.pickTitle(m.titles, m.originalName);
+        const altNames = (m.alternativeNames || []).map(a => a.content).filter(Boolean);
+        const description = altNames.length ? `Альт. названия: ${altNames.join(" / ")}` : "";
+        const genre = (m.labels || []).map(l => this.pickTitle(l.titles, null)).filter(Boolean);
+        const author = (m.mainStaff || []).map(s => s.person && s.person.name).filter(Boolean).join(", ");
+        const status = this.parseStatus(m.status);
+
+        // Chapters — iterate over each branch's chapter list.
+        // Sort: primary branch first (Russian translation), then by chapter count desc.
+        const branches = (m.branches || []).slice().sort((a, b) => {
+            if (a.primaryBranch && !b.primaryBranch) return -1;
+            if (b.primaryBranch && !a.primaryBranch) return 1;
+            return (b.chapters || 0) - (a.chapters || 0);
+        });
+        const chapters = [];
+        for (const br of branches) {
+            const branchId = br.id;
+            const team = br.primaryTeamActivities && br.primaryTeamActivities[0] && br.primaryTeamActivities[0].team;
+            const teamName = (team && team.name) || "";
+            let after = null;
+            for (let i = 0; i < 50; i++) {  // safety cap: 50 pages × 100 = 5000 chapters
+                const cr = await this.gql("fetchMangaChapters", Q_CHAPTERS, {
+                    branchId,
+                    after,
+                    orderBy: { field: "NUMBER", direction: "DESC" }
+                });
+                if (cr.error || !cr.data || !cr.data.mangaChapters) break;
+                const conn = cr.data.mangaChapters;
+                for (const e of (conn.edges || [])) {
+                    const n = e.node || {};
+                    const numLabel = n.number != null ? `Гл. ${n.number}` : "Глава";
+                    const volLabel = n.volume != null ? `Том ${n.volume} · ` : "";
+                    const titleLabel = n.name ? `: ${n.name}` : "";
+                    chapters.push({
+                        name: `${volLabel}${numLabel}${titleLabel}`,
+                        url: n.slug || n.id,
+                        dateUpload: n.createdAt ? new Date(n.createdAt).valueOf().toString() : Date.now().toString(),
+                        scanlator: teamName || null
+                    });
+                }
+                if (!conn.pageInfo || !conn.pageInfo.hasNextPage) break;
+                after = conn.pageInfo.endCursor;
+            }
+        }
+        // Dedup by URL — branches sometimes overlap
+        const seen = {};
+        const dedup = [];
+        for (const c of chapters) {
+            if (seen[c.url]) continue;
+            seen[c.url] = true;
+            dedup.push(c);
+        }
+
+        return {
+            name: name || slug,
+            imageUrl: this.coverUrl(m.cover),
+            description,
+            author,
+            genre,
+            status,
+            chapters: dedup
+        };
+    }
+
+    async getPageList(url) {
+        // url is the chapter slug (e.g. "205606528672089619") or chapter ID
+        const slug = String(url || "");
+        const cdnPref = (new SharedPreferences()).get("page_quality") || "auto";
+        const r = await this.gql("fetchMangaChapter", Q_CHAPTER, {
+            slug,
+            cdnQuality: cdnPref
+        });
+        if (r.error || !r.data || !r.data.mangaChapter) return [];
+        const ch = r.data.mangaChapter;
+        const useCompress = (cdnPref !== "original");
+        const headers = {
+            "User-Agent": SK_UA,
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Referer": this.source.baseUrl + "/"
+        };
+        return (ch.pages || [])
+            .sort((a, b) => (a.number || 0) - (b.number || 0))
+            .map(p => {
+                const img = p.image || {};
+                const u = useCompress ? ((img.compress && img.compress.url) || (img.original && img.original.url) || "")
+                                       : ((img.original && img.original.url) || (img.compress && img.compress.url) || "");
+                return { url: u, headers };
+            })
+            .filter(p => p.url);
+    }
+
+    getFilterList() {
+        return [
+            {
+                type_name: "SortFilter",
+                type: "order",
+                name: "Сортировка",
+                state: { type_name: "SortState", index: 0, ascending: false },
+                values: [
+                    ["По популярности", "POPULARITY_SCORE"],
+                    ["По рейтингу", "SCORE"],
+                    ["По просмотрам", "VIEWS"],
+                    ["По дате добавления", "CREATED_AT"]
+                ].map(x => ({ type_name: "SelectOption", name: x[0], value: x[1] }))
+            }
+        ];
+    }
+
+    getSourcePreferences() {
+        return [
+            {
+                key: "page_quality",
+                listPreference: {
+                    title: "Качество страниц",
+                    summary: "Auto/compress = быстро (700-1200px WEBP). Original = оригинал JPEG.",
+                    valueIndex: 0,
+                    entries: ["Авто (700-1200px WEBP)", "Оригинал (полное качество)"],
+                    entryValues: ["auto", "original"]
+                }
+            },
+            {
+                key: "session_cookie",
+                editTextPreference: {
+                    title: "Session cookie",
+                    summary: "Опционально. Если каталог пуст или контент скрыт — открой senkuro.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку для домена senkuro.com и вставь сюда.",
+                    value: "",
+                    dialogTitle: "Cookie",
+                    dialogMessage: "Пример: senkuro_session=...; OTHER=..."
+                }
+            }
+        ];
+    }
+}

@@ -54,25 +54,37 @@ class DefaultExtension extends MProvider {
         const doc = new Document(htmlBody);
         const list = [];
         const seen = {};
-        let items = doc.select("div.story_line");
+        // Real catalog cards: <article class="block story shortstory">.
+        // div.story_line is the homepage carousel only (≤6 items + Telegram bot tile).
+        let items = doc.select("article.block.story");
+        if (items.length === 0) items = doc.select("article.shortstory");
+        if (items.length === 0) items = doc.select("article.story");
+        if (items.length === 0) items = doc.select("div.story_line"); // legacy fallback
         for (const it of items) {
-            const a = it.selectFirst("a");
-            if (!a) continue;
-            const href = a.attr("href");
+            const titleA = it.selectFirst("h2.ntitle a") || it.selectFirst("h3.ntitle a") || it.selectFirst("a");
+            if (!titleA) continue;
+            const href = titleA.attr("href");
             if (!href || seen[href]) continue;
+            // Skip Telegram-bot tile / external URLs
+            if (href.indexOf("animejoy.ru") < 0 || href.indexOf("/t.me/") >= 0 || href.indexOf("telegram") >= 0) continue;
             seen[href] = true;
-            const name = ((a.attr("title") || "").split("[")[0] || a.text || "").trim();
+            const rawName = (titleA.text || titleA.attr("title") || "").trim();
+            // Trim "[03 из 12]" episode-count suffix
+            const name = rawName.replace(/\s*\[[^\]]+\]\s*$/g, "").trim();
             if (!name) continue;
             let imageUrl = "";
-            const img = it.selectFirst("i.image.cover, i.image, i.cover");
-            if (img) {
-                const style = img.attr("style") || "";
-                const m = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
-                if (m) imageUrl = this.absUrl(m[1]);
+            const imgTag = it.selectFirst("picture img") || it.selectFirst("img");
+            if (imgTag) {
+                imageUrl = imgTag.attr("src") || imgTag.attr("data-src") || "";
+                imageUrl = this.absUrl(imageUrl);
             }
             if (!imageUrl) {
-                const imgTag = it.selectFirst("img");
-                if (imgTag) imageUrl = this.absUrl(imgTag.attr("src") || imgTag.attr("data-src") || "");
+                const i = it.selectFirst("i.image.cover, i.image, i.cover");
+                if (i) {
+                    const style = i.attr("style") || "";
+                    const m = style.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/);
+                    if (m) imageUrl = this.absUrl(m[1]);
+                }
             }
             list.push({ name, imageUrl, link: href });
         }
