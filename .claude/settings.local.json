@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git --version)"
+      "Bash(git --version)",
+      "Read(//root/.claude/**)",
+      "Bash(mkdir -p /root/.claude/plans/)"
     ]
   }
 }
