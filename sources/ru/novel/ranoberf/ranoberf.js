@@ -83,7 +83,7 @@ class DefaultExtension extends MProvider {
     }
 
     parseStatus(s) {
-        if (s === "active" || s === "ongoing" || s === "ongiong") return 0;
+        if (s === "active" || s === "ongoing") return 0;
         if (s === "completed" || s === "finished") return 1;
         if (s === "freezed" || s === "frozen" || s === "hiatus") return 2;
         return 5;

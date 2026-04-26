@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.2.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/mangabuff.js",
@@ -131,10 +131,24 @@ class DefaultExtension extends MProvider {
             ? tagsEl.select("a").map(e => e.text.trim()).filter(x => x)
             : doc.select("a.tags__item").map(e => e.text.trim());
 
-        // Status from info row — try several locations
+        // Status from info row — try several locations.
+        // Dart's html package implements CSS3 selectors and does not support :contains(),
+        // so we iterate rows and match by label text.
         let statusText = "";
-        const statusRow = doc.selectFirst("div.info-list__row:contains(Статус) div.info-list__value, span.manga__status");
-        if (statusRow) statusText = statusRow.text;
+        const rows = doc.select("div.info-list__row");
+        for (const row of rows) {
+            const labelEl = row.selectFirst(".info-list__label, dt");
+            const label = labelEl ? labelEl.text : row.text;
+            if (label && label.indexOf("Статус") >= 0) {
+                const valEl = row.selectFirst("div.info-list__value, dd");
+                if (valEl) statusText = valEl.text.trim();
+                break;
+            }
+        }
+        if (!statusText) {
+            const fallback = doc.selectFirst("span.manga__status");
+            if (fallback) statusText = fallback.text.trim();
+        }
         const status = this.statusFromText(statusText);
 
         const chapters = [];
