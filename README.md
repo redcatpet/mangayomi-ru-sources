@@ -1,6 +1,6 @@
 # Mangayomi RU Sources
 
-Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **28 русских источников** манги, аниме и новелл.
+Репозиторий расширений для [Mangayomi](https://github.com/kodjodevf/mangayomi) — **27 русских источников** манги, аниме и новелл.
 
 Покрывает то, чего не хватает в основных репозиториях kodjodevf/m2k3a/Schnitzel5: ReadManga-семейство, AnimeGO, AniLib/MangaLib (новые .org-домены), Animesss, YummyAnime, Anixart, Ранобэ.рф и др.
 
@@ -14,10 +14,10 @@
 
 | Что подключить | URL |
 |---|---|
-| **Всё (28 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
+| **Всё (27 источников)** | `https://redcatpet.github.io/mangayomi-ru-sources/index.json` |
 | Только манга (10) | `https://redcatpet.github.io/mangayomi-ru-sources/manga_index.json` |
 | Только аниме (11) | `https://redcatpet.github.io/mangayomi-ru-sources/anime_index.json` |
-| Только новеллы (7) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
+| Только новеллы (6) | `https://redcatpet.github.io/mangayomi-ru-sources/novel_index.json` |
 
 После импорта включи нужные источники.
 
@@ -41,7 +41,9 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 
 **Новеллы (5):** Jaomix · RanobeHub · RanobeLib · Ранобэ.рф · Tl.Rulate
 
-> **v0.7.2 hotfix** (Ranobe-секция): Tl.Rulate каталог восстановлен (регрессия v0.4.0 — фильтр-параметры путали сервер); RanobeHub детальная страница больше не показывает `[object Object]` в авторе и сырой JSON в жанрах; Jaomix и Litnet парсеры стали устойчивее к смене вёрстки (трёхуровневый fallback).
+> **v0.7.2 hotfix** (Ranobe-секция): Tl.Rulate каталог восстановлен (регрессия v0.4.0 — фильтр-параметры путали сервер); RanobeHub детальная страница больше не показывает `[object Object]` в авторе и сырой JSON в жанрах; Jaomix парсер стал устойчивее к смене вёрстки (трёхуровневый fallback).
+>
+> **v0.7.3**: Litnet удалён (нейрослоп / низкое качество контента — не оправдывает поддержку CF + Angular SSR). Senkuro WIP — добавится после реверса API.
 
 ### ⚠ Частично работают (нужен токен / cookie / RU IP)
 
@@ -50,7 +52,6 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 | **MangaLib / AniLib / HentaiLib** | Bearer token для 18+ и Pro-глав | `mangalib.org` / `animelib.org` / `hentailib.me` → DevTools → Network → любой XHR к API → `Authorization: Bearer ...` (см. ниже) |
 | **MintManga / AllHentai** | Session cookie (без неё сервер шлёт `deleted1.png`) | Сайт → DevTools → Application → Cookies → копируй ВЕСЬ cookie-string после логина |
 | **Author.Today** | Session cookie | то же самое — без неё текст глав AES-зашифрован |
-| **Litnet** | Session cookie | без неё CF блочит каталог; в v0.7.2 парсер тянет всё, что отдаёт CF, поэтому заявки со скрытой каталогом теперь видны при наличии RU-IP |
 
 ### ❌ Известные не-фиксы
 
@@ -75,9 +76,9 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 
 ---
 
-## Как получить session cookie (для Grouple / Author.Today / Litnet)
+## Как получить session cookie (для Grouple / Author.Today)
 
-1. Открой **2.mintmanga.one** / **20.allhen.online** / **author.today** / **litnet.com**
+1. Открой **2.mintmanga.one** / **20.allhen.online** / **author.today**
 2. Залогинься (можно бесплатным аккаунтом)
 3. F12 → вкладка **Application** → раздел **Cookies** → выбрать домен сайта
 4. Скопируй ВСЕ cookies в одну строку формата `key1=value1; key2=value2; key3=value3`
@@ -94,7 +95,7 @@ E2E-харнес (`_scratch/e2e_real.js`) для каждого источник
 | **Remanga** | Bearer token для платного |
 | **Desu** | `Override baseUrl` (`desu.uno`/`desu.city`/`desu.me` редиректят) |
 | **AniLibria** | `Default quality` (480p / **720p** / 1080p) |
-| **Author.Today / Litnet** | `Session cookie` |
+| **Author.Today** | `Session cookie` |
 | **Все источники** | Кнопка "🔍 Filter" в каталоге для жанров/статусов/типов (если поддерживается) |
 
 ---
