@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.1",
+    "version": "0.4.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -55,9 +55,17 @@ class DefaultExtension extends MProvider {
             if (!link || seen[link]) continue;
             if (!/^\/book\/\d+/.test(link)) continue;
             seen[link] = true;
+            // Prefer schema.org canonical image (matches the detail page); fall back to
+            // visible <img> for legacy layouts. Without this, catalog uses the date-suffixed
+            // banner variant (`/i/book/.../X-220220.jpg`) and detail uses the canonical
+            // (`/i/book/.../X.jpg`), so the cover flips on tap.
             let imageUrl = "";
-            const img = c.selectFirst("img[src^='/i/book/']") || c.selectFirst("img");
-            if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+            const metaImg = c.selectFirst("meta[itemprop=image]");
+            if (metaImg) imageUrl = this.absUrl(metaImg.attr("content") || "");
+            if (!imageUrl) {
+                const img = c.selectFirst("img[src^='/i/book/']") || c.selectFirst("img");
+                if (img) imageUrl = this.absUrl(img.attr("src") || img.attr("data-src") || "");
+            }
             // Title — try span/p.t-title, then itemprop=name (h4 in current layout), then any heading.
             const titleEl = c.selectFirst("[itemprop=name]")
                          || c.selectFirst("span.t-title")
@@ -127,8 +135,14 @@ class DefaultExtension extends MProvider {
 
         const name = (doc.selectFirst("h1[itemprop=name]") || doc.selectFirst("h1")).text.trim();
         let imageUrl = "";
-        const imgEl = doc.selectFirst("div.book img, .main-image img, img[itemprop=image]");
-        if (imgEl) imageUrl = this.absUrl(imgEl.attr("src") || imgEl.attr("data-src") || "");
+        // Match what parseBookList picks (meta[itemprop=image] canonical) so the cover
+        // doesn't flip when the user taps a card.
+        const metaImg = doc.selectFirst("meta[itemprop=image]");
+        if (metaImg) imageUrl = this.absUrl(metaImg.attr("content") || "");
+        if (!imageUrl) {
+            const imgEl = doc.selectFirst("div.book img, .main-image img, img[itemprop=image]");
+            if (imgEl) imageUrl = this.absUrl(imgEl.attr("src") || imgEl.attr("data-src") || "");
+        }
 
         const description = (
             doc.selectFirst("div[itemprop=description]")
