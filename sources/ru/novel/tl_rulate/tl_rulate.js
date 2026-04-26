@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.4.2",
+    "version": "0.4.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/tl_rulate.js",
@@ -135,10 +135,12 @@ class DefaultExtension extends MProvider {
 
         const name = (doc.selectFirst("h1[itemprop=name]") || doc.selectFirst("h1")).text.trim();
         let imageUrl = "";
-        // Match what parseBookList picks (meta[itemprop=image] canonical) so the cover
-        // doesn't flip when the user taps a card.
-        const metaImg = doc.selectFirst("meta[itemprop=image]");
-        if (metaImg) imageUrl = this.absUrl(metaImg.attr("content") || "");
+        // The detail page contains a recommendations carousel that ALSO has
+        // `<meta itemprop=image>` tags for other books — picking the first one
+        // returns someone else's cover. og:image is the only meta scoped specifically
+        // to the current book, and resolves to the same canonical URL the catalog uses.
+        const ogImg = doc.selectFirst("meta[property='og:image']");
+        if (ogImg) imageUrl = this.absUrl(ogImg.attr("content") || "");
         if (!imageUrl) {
             const imgEl = doc.selectFirst("div.book img, .main-image img, img[itemprop=image]");
             if (imgEl) imageUrl = this.absUrl(imgEl.attr("src") || imgEl.attr("data-src") || "");
