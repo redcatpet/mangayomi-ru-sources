@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.4",
+    "version": "0.3.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -201,9 +201,13 @@ class DefaultExtension extends MProvider {
             const paras = body.match(/<p>[\s\S]*?<\/p>/g) || [];
             html = paras.join("\n");
         }
-        // Strip ads and scripts
+        // Strip header widgets (book thumbnail/title/divider, rating/comment hoticons,
+        // chapter title-wrapper) and ads/scripts so only the prologue text remains.
         html = html.replace(/<script[\s\S]*?<\/script>/gi, "")
                    .replace(/<ins[\s\S]*?<\/ins>/gi, "")
+                   .replace(/<div[^>]*class="[^"]*tablet or lower hidden[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi, "")
+                   .replace(/<div[^>]*class="[^"]*chapter-hoticons[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi, "")
+                   .replace(/<div[^>]*class="[^"]*title-wrapper[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "")
                    .replace(/<div[^>]*class="[^"]*ads[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "")
                    .replace(/<div[^>]*id="[^"]*y251595[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
         if (!html.trim()) return `<h2>${name || ""}</h2><p>(Не удалось извлечь текст главы)</p>`;
