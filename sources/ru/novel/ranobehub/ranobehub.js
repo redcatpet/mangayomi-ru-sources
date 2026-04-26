@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.2",
+    "version": "0.3.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -141,11 +141,15 @@ class DefaultExtension extends MProvider {
     }
 
     async getHtmlContent(name, url) {
-        const res = await this.client.get(url, {
-            ...this.headers,
+        // Object.assign instead of spread — flutter_qjs supports both, but spread on
+        // a getter property has burned us before, and explicit copy is unambiguous.
+        const headers = Object.assign({}, this.headers, {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         });
-        if (res.statusCode !== 200) return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}</p>`;
+        const res = await this.client.get(url, headers);
+        if (res.statusCode !== 200) {
+            return `<h2>${name || ""}</h2><p>Ошибка HTTP ${res.statusCode}. URL: ${url}</p>`;
+        }
         const body = res.body || "";
 
         // Chapter body lives inside `<div class="ui text container" data-container="{chapterId}">`
