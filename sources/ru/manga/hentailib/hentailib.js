@@ -4,7 +4,7 @@ const mangayomiSources = [{
     "name": "HentaiLib",
     "lang": "ru",
     "baseUrl": "https://hentailib.me",
-    "apiUrl": "https://api.cdnlibs.org/api",
+    "apiUrl": "https://hapi.hentaicdn.org/api",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 0,

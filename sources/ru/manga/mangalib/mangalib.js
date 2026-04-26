@@ -4,7 +4,7 @@ const mangayomiSources = [{
     "name": "MangaLib",
     "lang": "ru",
     "baseUrl": "https://mangalib.org",
-    "apiUrl": "https://api.cdnlibs.org/api",
+    "apiUrl": "https://api2.mangalib.me/api",
     "iconUrl": "",
     "typeSource": "single",
     "itemType": 0,
