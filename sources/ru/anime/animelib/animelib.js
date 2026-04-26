@@ -31,27 +31,20 @@ class DefaultExtension extends MProvider {
     async search(query, page, filters) { return await libSearch(this.client, this.source, ANILIB_SITE_ID, "anime", query, page, filters); }
 
     async getDetail(slug) {
-        const headers = libApiHeaders(this.source, ANILIB_SITE_ID);
-        // `studios` is manga-only — sending it on anime causes HTTP 422 "fields.3 wrong".
-        const infoRes = await this.client.get(
-            `${this.source.apiUrl}/anime/${slug}?fields[]=summary&fields[]=genres&fields[]=authors`,
-            headers
-        );
+        const infoUrl = `${this.source.apiUrl}/anime/${slug}?fields[]=summary&fields[]=genres&fields[]=authors`;
+        const infoRes = await libGetWithFallback(this.client, infoUrl, this.source, ANILIB_SITE_ID);
         if (infoRes.statusCode !== 200) {
-            return { name: slug, imageUrl: "", description: `(Ошибка загрузки HTTP ${infoRes.statusCode})`, status: 5, genre: [], episodes: [] };
+            const hint = infoRes.statusCode === 422
+                ? ' — возможно Bearer token из другого Lib-сайта (audience mismatch). Уберите токен в Settings или возьмите его именно с animelib.org.'
+                : '';
+            return { name: slug, imageUrl: "", description: `(Ошибка загрузки HTTP ${infoRes.statusCode}${hint})`, status: 5, genre: [], episodes: [] };
         }
         const info = JSON.parse(infoRes.body).data;
         // Real episode list is /api/episodes?anime_id=X (confirmed via live probe); /anime/{slug}/episodes is legacy.
         let episodes = [];
-        const epByAnime = await this.client.get(`${this.source.apiUrl}/episodes?anime_id=${info.id}`, headers);
+        const epByAnime = await libGetWithFallback(this.client, `${this.source.apiUrl}/episodes?anime_id=${info.id}`, this.source, ANILIB_SITE_ID);
         if (epByAnime.statusCode === 200) {
             try { episodes = JSON.parse(epByAnime.body).data || []; } catch (e) {}
-        }
-        if (!episodes.length) {
-            const epRes = await this.client.get(`${this.source.apiUrl}/anime/${slug}/episodes`, headers);
-            if (epRes.statusCode === 200) {
-                try { episodes = JSON.parse(epRes.body).data || []; } catch (e) {}
-            }
         }
 
         return {
