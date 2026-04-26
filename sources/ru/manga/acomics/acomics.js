@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/acomics.js",
@@ -90,50 +90,65 @@ class DefaultExtension extends MProvider {
         const path = url.startsWith("http") ? url.replace(this.source.baseUrl, "") : url;
         const slugMatch = path.match(/~([^/?]+)/);
         const slug = slugMatch ? slugMatch[1] : path.replace(/^\/+/, "").replace(/^~/, "");
-        const res = await this.client.get(`${this.source.baseUrl}/~${slug}`, this.headers);
+        // Real metadata page is /~slug/about — root /~slug redirects to last-viewed issue
+        const res = await this.client.get(`${this.source.baseUrl}/~${slug}/about`, this.headers);
         const doc = new Document(res.body);
 
-        const nameEl = doc.selectFirst("h1.serial-header-title") || doc.selectFirst("h1") || doc.selectFirst(".about-header h2");
+        const nameEl = doc.selectFirst("h1");
         const name = nameEl ? nameEl.text.trim() : slug;
-        const imgEl = doc.selectFirst("img.serial-cover") || doc.selectFirst(".about-header img") || doc.selectFirst("div.serial-header img");
+
+        const imgEl = doc.selectFirst("img.serial-header-image")
+                   || doc.selectFirst(".serial-header img")
+                   || doc.selectFirst("img[src^='/upload/header/']");
         let imageUrl = "";
         if (imgEl) {
             imageUrl = imgEl.attr("data-real-src") || imgEl.attr("src") || "";
             imageUrl = this.absUrl(imageUrl);
         }
-        const descEl = doc.selectFirst("section.serial-description") || doc.selectFirst("div.about-text") || doc.selectFirst("p.serial-about");
-        const description = descEl ? descEl.text.trim() : "";
-        const genre = doc.select("a.tag, a[href*='/serial-category/']").map(e => e.text.trim()).filter(x => x);
 
-        // Chapters — use sequential issue URLs from /~slug/list
-        const chapters = [];
-        const listRes = await this.client.get(`${this.source.baseUrl}/~${slug}/list`, this.headers);
-        if (listRes.statusCode === 200) {
-            const listDoc = new Document(listRes.body);
-            const rows = listDoc.select(`a[href^='/~${slug}/']`);
-            const seen = {};
-            for (const a of rows) {
+        // Description in p.serial-about-text (or section.serial-description fallback)
+        const descEl = doc.selectFirst("p.serial-about-text")
+                    || doc.selectFirst("div.serial-about-text")
+                    || doc.selectFirst("section.serial-description")
+                    || doc.selectFirst("div.about-text");
+        const description = descEl ? descEl.text.trim() : "";
+
+        // Authors: <p class="serial-about-authors"><b>Автор:</b> <a href="/-NAME">NAME</a></p>
+        const authorsEl = doc.selectFirst("p.serial-about-authors") || doc.selectFirst(".serial-about-authors");
+        const author = authorsEl
+            ? authorsEl.select("a").map(a => a.text.trim()).filter(x => x).join(", ")
+            : "";
+
+        // Genre/tags — acomics has minimal tagging on the about page; check both a.tag and category links
+        const genre = doc.select("a.tag, a[href*='/serial-category/'], a[href*='/serial-tag/']").map(e => e.text.trim()).filter(x => x);
+
+        // Total issue count — acomics shows it on the about page as
+        // "<b>Количество выпусков:</b> 109". Use that to enumerate /~slug/1 ... /~slug/N
+        // (the site has no full chapter-list endpoint).
+        let totalIssues = 0;
+        const aboutText = doc.text || "";
+        const cm = aboutText.match(/Количество выпусков:\s*(\d+)/);
+        if (cm) totalIssues = parseInt(cm[1]) || 0;
+        // Fallback: highest-numbered link found in the page
+        if (!totalIssues) {
+            for (const a of doc.select(`a[href^='/~${slug}/']`)) {
                 const href = a.attr("href") || "";
-                const num = href.replace(`/~${slug}/`, "").split(/[?#/]/)[0];
-                if (!/^\d+$/.test(num)) continue;
-                if (seen[num]) continue;
-                seen[num] = true;
-                const txt = (a.text || "").trim() || `Выпуск ${num}`;
-                chapters.push({
-                    name: txt,
-                    url: `/~${slug}/${num}`,
-                    dateUpload: Date.now().toString(),
-                    scanlator: null
-                });
+                const num = parseInt(href.replace(`/~${slug}/`, "").split(/[?#/]/)[0]);
+                if (!isNaN(num) && num > totalIssues) totalIssues = num;
             }
-            chapters.sort((a, b) => {
-                const an = parseInt(a.url.split("/").pop()) || 0;
-                const bn = parseInt(b.url.split("/").pop()) || 0;
-                return bn - an;
+        }
+
+        const chapters = [];
+        for (let i = totalIssues; i >= 1; i--) {
+            chapters.push({
+                name: `Выпуск ${i}`,
+                url: `/~${slug}/${i}`,
+                dateUpload: Date.now().toString(),
+                scanlator: null
             });
         }
 
-        return { name, imageUrl, description, genre, status: 5, chapters };
+        return { name, imageUrl, description, author, genre, status: 5, chapters };
     }
 
     async getPageList(url) {

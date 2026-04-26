@@ -143,11 +143,15 @@ class DefaultExtension extends MProvider {
 
     async getDetail(url) {
         const detailUrl = this.absUrl(url);
-        const res = await this.client.get(detailUrl, this.headers);
+        const animeId = this.animeIdFromUrl(url);
+
+        // Parallelize: detail page + /player/{id} AJAX run concurrently (was 2× sequential).
+        const fetches = [this.client.get(detailUrl, this.headers)];
+        if (animeId) fetches.push(this.client.get(`${this.source.baseUrl}/player/${animeId}`, this.ajaxHeaders));
+        const [res, playerRes] = await Promise.all(fetches);
         const doc = new Document(res.body);
 
         const name = (doc.selectFirst("h1") || { text: "" }).text.trim();
-        // Poster
         let imageUrl = "";
         const posterImg = doc.selectFirst("div.anime-poster img, div.hero__cover img, img.anime-poster, div.anime-info img");
         if (posterImg) imageUrl = this.absUrl(posterImg.attr("src") || posterImg.attr("data-src") || "");
@@ -159,12 +163,8 @@ class DefaultExtension extends MProvider {
         const description = descEl ? descEl.text.trim() : "";
         const genre = doc.select("a[href*='/anime/genre/']").map(e => e.text.trim()).filter(x => x);
 
-        const animeId = this.animeIdFromUrl(url);
-        if (!animeId) return { name, imageUrl, description, genre, status: 5, episodes: [] };
-
-        const playerRes = await this.client.get(`${this.source.baseUrl}/player/${animeId}`, this.ajaxHeaders);
         const episodes = [];
-        if (playerRes.statusCode === 200) {
+        if (animeId && playerRes && playerRes.statusCode === 200) {
             try {
                 const content = (JSON.parse(playerRes.body).data || {}).content || "";
                 const optRe = /<option\s+value="(\d+)"[^>]*>([^<]+)</g;
