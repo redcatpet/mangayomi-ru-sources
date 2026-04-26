@@ -11,7 +11,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.5.1",
+    "version": "0.5.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animelib.js",
@@ -31,16 +31,16 @@ class DefaultExtension extends MProvider {
     async search(query, page, filters) { return await libSearch(this.client, this.source, ANILIB_SITE_ID, "anime", query, page, filters); }
 
     async getDetail(slug) {
-        const infoUrl = `${this.source.apiUrl}/anime/${slug}?fields[]=summary&fields[]=genres&fields[]=authors`;
+        const apiSlug = libExtractSlug(slug);
+        const infoUrl = `${this.source.apiUrl}/anime/${apiSlug}?fields[]=summary&fields[]=genres&fields[]=authors`;
         const infoRes = await libGetWithFallback(this.client, infoUrl, this.source, ANILIB_SITE_ID);
         if (infoRes.statusCode !== 200) {
             const hint = infoRes.statusCode === 422
                 ? ' — возможно Bearer token из другого Lib-сайта (audience mismatch). Уберите токен в Settings или возьмите его именно с animelib.org.'
                 : '';
-            return { name: slug, imageUrl: "", description: `(Ошибка загрузки HTTP ${infoRes.statusCode}${hint})`, status: 5, genre: [], episodes: [] };
+            return { name: apiSlug, imageUrl: "", description: `(Ошибка загрузки HTTP ${infoRes.statusCode}${hint})`, status: 5, genre: [], episodes: [] };
         }
         const info = JSON.parse(infoRes.body).data;
-        // Real episode list is /api/episodes?anime_id=X (confirmed via live probe); /anime/{slug}/episodes is legacy.
         let episodes = [];
         const epByAnime = await libGetWithFallback(this.client, `${this.source.apiUrl}/episodes?anime_id=${info.id}`, this.source, ANILIB_SITE_ID);
         if (epByAnime.statusCode === 200) {
@@ -48,7 +48,7 @@ class DefaultExtension extends MProvider {
         }
 
         return {
-            name: libCoerceString(info.rus_name || info.eng_name || info.name || slug),
+            name: libCoerceString(info.rus_name || info.eng_name || info.name || apiSlug),
             imageUrl: libProxyImage(libCoerceString((info.cover && (info.cover.default || info.cover.thumbnail)) || "")),
             author: (info.authors || []).map(x => libCoerceString(x && x.name)).filter(Boolean).join(", "),
             status: libParseStatus(info.status && libCoerceString(info.status.label)),

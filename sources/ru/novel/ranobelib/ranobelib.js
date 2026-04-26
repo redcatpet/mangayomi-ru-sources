@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.5.0",
+    "version": "0.5.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobelib.js",
@@ -30,20 +30,21 @@ class DefaultExtension extends MProvider {
     async search(query, page, filters) { return await libSearch(this.client, this.source, RANOBELIB_SITE_ID, "manga", query, page, filters); }
 
     async getDetail(slug) {
+        const apiSlug = libExtractSlug(slug);
         const headers = libApiHeaders(this.source, RANOBELIB_SITE_ID);
         const infoRes = await this.client.get(
-            `${this.source.apiUrl}/manga/${slug}?fields[]=chap_count&fields[]=summary&fields[]=genres&fields[]=authors`,
+            `${this.source.apiUrl}/manga/${apiSlug}?fields[]=chap_count&fields[]=summary&fields[]=genres&fields[]=authors`,
             headers
         );
         if (infoRes.statusCode !== 200) {
-            return { name: slug, imageUrl: "", description: "(Ошибка загрузки)", status: 5, genre: [], chapters: [] };
+            return { name: apiSlug, imageUrl: "", description: "(Ошибка загрузки)", status: 5, genre: [], chapters: [] };
         }
         const info = JSON.parse(infoRes.body).data;
-        const chRes = await this.client.get(`${this.source.apiUrl}/manga/${slug}/chapters`, headers);
+        const chRes = await this.client.get(`${this.source.apiUrl}/manga/${apiSlug}/chapters`, headers);
         const chapters = chRes.statusCode === 200 ? (JSON.parse(chRes.body).data || []) : [];
-        const chBase = `${this.source.apiUrl}/manga/${slug}/chapter`;
+        const chBase = `${this.source.apiUrl}/manga/${apiSlug}/chapter`;
         return {
-            name: libCoerceString(info.rus_name || info.eng_name || info.name || slug),
+            name: libCoerceString(info.rus_name || info.eng_name || info.name || apiSlug),
             imageUrl: libProxyImage(libCoerceString((info.cover && (info.cover.default || info.cover.thumbnail)) || "")),
             author: (info.authors || []).map(x => libCoerceString(x && x.name)).filter(Boolean).join(", "),
             status: libParseStatus(info.status && libCoerceString(info.status.label)),

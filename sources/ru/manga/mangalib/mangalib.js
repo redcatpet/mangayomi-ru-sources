@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.5.0",
+    "version": "0.5.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/mangalib.js",
