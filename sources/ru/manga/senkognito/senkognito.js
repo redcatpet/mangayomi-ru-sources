@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.2.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
-    "notes": "NSFW-сестра Senkuro. GraphQL API api.senkognito.com/graphql. Для скрытого 18+ контента нужна авторизация — вставь cookie из senkognito.com → DevTools → Application → Cookies (поле session_cookie). Геоблок для не-RU IP."
+    "notes": "NSFW-сестра Senkuro. GraphQL API api.senkognito.com/graphql. Каталог фильтруется по rating={EXPLICIT,QUESTIONABLE} — как на самом сайте. Для скрытого 18+ контента может понадобиться cookie из senkognito.com (поле session_cookie). Геоблок для не-RU IP. Login/password формы у Senkuro-семейства нет — авторизация только через OAuth2-PKCE из браузера."
 }];
 
 const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
@@ -21,8 +21,14 @@ const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 //
 // Catalog/search. The server's "mangas" query supports many filters; we expose the most
 // useful ones (search text, order). orderField enum: SCORE | VIEWS | CREATED_AT | POPULARITY_SCORE.
-const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: String, $orderField: MangaOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
-  mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search) {
+//
+// Senkognito differs from Senkuro by ALWAYS passing a `rating` filter that limits
+// results to NSFW/sensitive ratings. The filter shape is:
+//   rating: { include: [EXPLICIT, QUESTIONABLE, ...] }
+// Without this filter the API returns the full Senkuro catalog (because both sites
+// share one backend), which is why earlier versions showed SFW manga on Senkognito.
+const Q_MANGAS = `query fetchMangas($first: Int = 30, $after: String, $search: String, $rating: MangaRatingFilter, $orderField: MangaOrderField = POPULARITY_SCORE, $orderDirection: OrderDirection = DESC) {
+  mangas(first: $first, after: $after, orderBy: {field: $orderField, direction: $orderDirection}, search: $search, rating: $rating) {
     edges { node { id slug type rating titles { lang content } originalName { lang content } cover { main: resize(width: 300, height: 420, format: WEBP) { url } } } }
     pageInfo { hasNextPage endCursor }
   }
@@ -181,20 +187,30 @@ class DefaultExtension extends MProvider {
         }).filter(x => x.name && x.link);
     }
 
+    // The rating filter that distinguishes Senkognito's catalog from Senkuro's.
+    // Reads user override from prefs (default = EXPLICIT + QUESTIONABLE, matching the
+    // senkognito.com homepage ground-truth behavior).
+    nsfwRatingFilter() {
+        const pref = (new SharedPreferences()).get("rating_mode") || "default";
+        if (pref === "explicit_only") return { include: ["EXPLICIT"] };
+        if (pref === "wide") return { include: ["EXPLICIT", "QUESTIONABLE", "SENSITIVE"] };
+        if (pref === "all") return null;  // no filter — same catalog as Senkuro
+        return { include: ["EXPLICIT", "QUESTIONABLE"] };  // default
+    }
+
     async fetchListByOrder(field, page) {
-        // Senkuro uses cursor-based pagination — emulate page-based by walking from p=1.
+        // Senkognito uses cursor-based pagination — emulate page-based by walking from p=1.
         // For p>1 we re-walk from start (Mangayomi catalog scrolls page-by-page so this
         // is acceptable: each page is one extra round-trip).
+        const rating = this.nsfwRatingFilter();
         let after = null;
         for (let i = 1; i <= page; i++) {
-            const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC" });
+            const r = await this.gql("fetchMangas", Q_MANGAS, { first: 30, after, orderField: field, orderDirection: "DESC", rating });
             if (r.error || !r.data || !r.data.mangas) {
                 if (page === 1) {
-                    // Surface the error to the user via a single fake "result" so they
-                    // see WHAT is wrong (not just "0 results").
                     return {
                         list: [{
-                            name: `[Senkuro error] ${r.error || "no data"}`,
+                            name: `[Senkognito error] ${r.error || "no data"}`,
                             imageUrl: "",
                             link: "__error__"
                         }],
@@ -216,7 +232,6 @@ class DefaultExtension extends MProvider {
 
     async search(query, page, filters) {
         const q = (query || "").trim();
-        // Sort filter
         let orderField = "POPULARITY_SCORE";
         let orderDirection = "DESC";
         if (filters && filters[0] && filters[0].values) {
@@ -228,7 +243,8 @@ class DefaultExtension extends MProvider {
             first: 30,
             search: q || null,
             orderField,
-            orderDirection
+            orderDirection,
+            rating: this.nsfwRatingFilter()
         });
         if (r.error || !r.data) return { list: [], hasNextPage: false };
         const conn = r.data.mangas || {};
@@ -365,6 +381,16 @@ class DefaultExtension extends MProvider {
     getSourcePreferences() {
         return [
             {
+                key: "rating_mode",
+                listPreference: {
+                    title: "Что показывать в каталоге",
+                    summary: "По умолчанию каталог Senkognito ограничен NSFW (EXPLICIT+QUESTIONABLE) — как на самом сайте. \"Шире\" добавляет SENSITIVE. \"Всё\" снимает фильтр (тогда каталог становится таким же как Senkuro).",
+                    valueIndex: 0,
+                    entries: ["NSFW (по умолчанию: EXPLICIT+QUESTIONABLE)", "Только EXPLICIT", "Шире (+SENSITIVE)", "Всё (без фильтра)"],
+                    entryValues: ["default", "explicit_only", "wide", "all"]
+                }
+            },
+            {
                 key: "page_quality",
                 listPreference: {
                     title: "Качество страниц",
@@ -378,7 +404,7 @@ class DefaultExtension extends MProvider {
                 key: "session_cookie",
                 editTextPreference: {
                     title: "Session cookie",
-                    summary: "Опционально. Если каталог пуст или контент скрыт — открой senkuro.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку для домена senkuro.com и вставь сюда.",
+                    summary: "Опционально. Если каталог пуст или контент скрыт — открой senkognito.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку и вставь сюда. Sa Senkognito использует OAuth2-PKCE авторизацию — простой login/password-формы в API нет, поэтому cookie/Bearer-токен это единственный способ передать сессию из браузера в Mangayomi.",
                     value: "",
                     dialogTitle: "Cookie",
                     dialogMessage: "Пример: senkuro_session=...; OTHER=..."
