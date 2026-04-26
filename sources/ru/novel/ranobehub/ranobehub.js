@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.1",
+    "version": "0.3.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -115,10 +115,24 @@ class DefaultExtension extends MProvider {
         const tagItems = [].concat((info.tags && info.tags.genres) || [], (info.tags && info.tags.events) || []);
         const genre = tagItems.map(t => t.title || (t.names && (t.names.rus || t.names.eng)) || "").filter(x => x);
 
+        // info.description is HTML markup (`<p>…</p><p>…</p>`); strip tags to plain text
+        // and fall back to synopsis (already plain but truncated with "…").
+        const descRaw = info.description || info.synopsis || "";
+        const description = descRaw
+            .replace(/<\/p>\s*<p>/gi, "\n\n")
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<[^>]+>/g, "")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .trim();
+
         return {
             name: (info.names && (info.names.rus || info.names.eng)) || info.name || String(slug),
             imageUrl: (info.posters && (info.posters.medium || info.posters.big || info.posters.small)) || "",
-            description: info.description || info.synopsis || "",
+            description: description,
             author: authorStr,
             genre: genre,
             status: status,
