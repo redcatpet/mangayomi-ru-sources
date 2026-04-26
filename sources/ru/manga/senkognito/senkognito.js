@@ -8,11 +8,11 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.2.0",
+    "version": "0.2.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
-    "notes": "NSFW-сестра Senkuro. GraphQL API api.senkognito.com/graphql. Каталог фильтруется по rating={EXPLICIT,QUESTIONABLE} — как на самом сайте. Для скрытого 18+ контента может понадобиться cookie из senkognito.com (поле session_cookie). Геоблок для не-RU IP. Login/password формы у Senkuro-семейства нет — авторизация только через OAuth2-PKCE из браузера."
+    "notes": "NSFW-сестра Senkuro. GraphQL API api.senkognito.com/graphql. Каталог фильтруется по rating={EXPLICIT,QUESTIONABLE} — как на самом сайте. Для авторизации лучше всего использовать поле `Auth token` — это значение cookie `access_token` из браузера (DevTools → Cookies → senkognito.com)."
 }];
 
 const SK_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
@@ -98,7 +98,15 @@ class DefaultExtension extends MProvider {
             "Origin": this.source.baseUrl,
             "Referer": this.source.baseUrl + "/"
         };
-        const cookie = (new SharedPreferences()).get("session_cookie");
+        const prefs = new SharedPreferences();
+        // Bearer from `access_token` cookie value — preferred (one field instead of full cookie).
+        const bearer = prefs.get("bearer_token");
+        if (bearer && bearer.trim()) {
+            let v = bearer.trim();
+            if (v.toLowerCase().startsWith("bearer ")) v = v.slice(7).trim();
+            h["Authorization"] = "Bearer " + v;
+        }
+        const cookie = prefs.get("session_cookie");
         if (cookie && cookie.trim()) h["Cookie"] = cookie.trim();
         return h;
     }
@@ -401,13 +409,23 @@ class DefaultExtension extends MProvider {
                 }
             },
             {
+                key: "bearer_token",
+                editTextPreference: {
+                    title: "Auth token (access_token)",
+                    summary: "Самый простой способ передать сессию. Войди на senkognito.com в браузере → F12 → Application → Cookies → senkognito.com → найди cookie с именем `access_token` → скопируй его Value (длинная строка вида v4.local.X...) → вставь сюда. Префикс 'Bearer ' добавлять НЕ надо.",
+                    value: "",
+                    dialogTitle: "access_token",
+                    dialogMessage: "Пример: v4.local.DWdVvjoPE60luSyiJvWj... (~280 символов)"
+                }
+            },
+            {
                 key: "session_cookie",
                 editTextPreference: {
-                    title: "Session cookie",
-                    summary: "Опционально. Если каталог пуст или контент скрыт — открой senkognito.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку и вставь сюда. Sa Senkognito использует OAuth2-PKCE авторизацию — простой login/password-формы в API нет, поэтому cookie/Bearer-токен это единственный способ передать сессию из браузера в Mangayomi.",
+                    title: "Session cookie (legacy fallback)",
+                    summary: "Альтернатива access_token. Скопируй ВСЮ cookie-строку из DevTools → Application → Cookies. Используй только если Bearer не работает.",
                     value: "",
                     dialogTitle: "Cookie",
-                    dialogMessage: "Пример: senkuro_session=...; OTHER=..."
+                    dialogMessage: "Пример: access_token=v4.local....; theme=dark"
                 }
             }
         ];

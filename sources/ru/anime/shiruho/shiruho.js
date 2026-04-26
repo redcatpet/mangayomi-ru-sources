@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/shiruho.js",
@@ -86,7 +86,15 @@ class DefaultExtension extends MProvider {
             "Origin": this.source.baseUrl,
             "Referer": this.source.baseUrl + "/"
         };
-        const cookie = (new SharedPreferences()).get("session_cookie");
+        const prefs = new SharedPreferences();
+        // Bearer from `access_token` cookie value — preferred over full cookie string.
+        const bearer = prefs.get("bearer_token");
+        if (bearer && bearer.trim()) {
+            let v = bearer.trim();
+            if (v.toLowerCase().startsWith("bearer ")) v = v.slice(7).trim();
+            h["Authorization"] = "Bearer " + v;
+        }
+        const cookie = prefs.get("session_cookie");
         if (cookie && cookie.trim()) h["Cookie"] = cookie.trim();
         return h;
     }
@@ -353,13 +361,23 @@ class DefaultExtension extends MProvider {
     getSourcePreferences() {
         return [
             {
+                key: "bearer_token",
+                editTextPreference: {
+                    title: "Auth token (access_token)",
+                    summary: "Самый простой способ передать сессию. Войди на shiruho.com в браузере → F12 → Application → Cookies → shiruho.com → найди cookie с именем `access_token` → скопируй его Value (длинная строка вида v4.local.X...) → вставь сюда. Префикс 'Bearer ' добавлять НЕ надо.",
+                    value: "",
+                    dialogTitle: "access_token",
+                    dialogMessage: "Пример: v4.local.DWdVvjoPE60luSyiJvWj... (~280 символов)"
+                }
+            },
+            {
                 key: "session_cookie",
                 editTextPreference: {
-                    title: "Session cookie",
-                    summary: "Опционально. Если каталог пуст или контент скрыт — открой shiruho.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку для домена shiruho.com и вставь сюда.",
+                    title: "Session cookie (legacy fallback)",
+                    summary: "Альтернатива access_token. Скопируй ВСЮ cookie-строку из DevTools → Application → Cookies. Используй только если Bearer не работает.",
                     value: "",
                     dialogTitle: "Cookie",
-                    dialogMessage: "Пример: shiruho_session=...; OTHER=..."
+                    dialogMessage: "Пример: access_token=v4.local....; theme=dark"
                 }
             }
         ];

@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.2.2",
+    "version": "0.2.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkuro.js",
@@ -92,7 +92,18 @@ class DefaultExtension extends MProvider {
             "Origin": this.source.baseUrl,
             "Referer": this.source.baseUrl + "/"
         };
-        const cookie = (new SharedPreferences()).get("session_cookie");
+        const prefs = new SharedPreferences();
+        // Bearer token from `access_token` cookie — preferred (cleaner UX than full cookie).
+        // The Senkuro Vue app reads `access_token` cookie and sends it as
+        // `Authorization: Bearer <value>` for every GraphQL call.
+        const bearer = prefs.get("bearer_token");
+        if (bearer && bearer.trim()) {
+            let v = bearer.trim();
+            if (v.toLowerCase().startsWith("bearer ")) v = v.slice(7).trim();
+            h["Authorization"] = "Bearer " + v;
+        }
+        // Optional fallback: full cookie string from DevTools (legacy method).
+        const cookie = prefs.get("session_cookie");
         if (cookie && cookie.trim()) h["Cookie"] = cookie.trim();
         return h;
     }
@@ -375,13 +386,23 @@ class DefaultExtension extends MProvider {
                 }
             },
             {
+                key: "bearer_token",
+                editTextPreference: {
+                    title: "Auth token (access_token)",
+                    summary: "Самый простой способ передать сессию. Войди на senkuro.com в браузере → F12 → Application → Cookies → senkuro.com → найди cookie с именем `access_token` → скопируй его Value (длинная строка вида v4.local.X...) → вставь сюда. Поле префикса 'Bearer ' добавлять НЕ надо.",
+                    value: "",
+                    dialogTitle: "access_token",
+                    dialogMessage: "Пример: v4.local.DWdVvjoPE60luSyiJvWj... (~280 символов)"
+                }
+            },
+            {
                 key: "session_cookie",
                 editTextPreference: {
-                    title: "Session cookie",
-                    summary: "Опционально. Если каталог пуст или контент скрыт — открой senkuro.com → DevTools (F12) → Application → Cookies → скопируй ВСЮ cookie-строку для домена senkuro.com и вставь сюда.",
+                    title: "Session cookie (legacy fallback)",
+                    summary: "Альтернатива access_token. Скопируй ВСЮ cookie-строку из DevTools → Application → Cookies. Используй только если Bearer не работает.",
                     value: "",
                     dialogTitle: "Cookie",
-                    dialogMessage: "Пример: senkuro_session=...; OTHER=..."
+                    dialogMessage: "Пример: access_token=v4.local....; theme=dark"
                 }
             }
         ];
