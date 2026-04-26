@@ -10,11 +10,11 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.4.0",
+    "version": "0.5.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/mangalib.js",
-    "notes": "mangalib.org (актуальный домен; .me ещё работает). API api.cdnlibs.org site_id=1. Для 18+/Pro-глав нужен Bearer token: DevTools на mangalib.org → Network → любой XHR к api.cdnlibs.org → Authorization → копируй всё после Bearer → вставь в Settings."
+    "notes": "mangalib.org (актуальный домен). API api2.mangalib.me/api site_id=1. Для 18+/Pro-глав нужен Bearer token: DevTools → Network → XHR → Authorization → вставь в Settings. Картинки автоматически переключаются между CDN при 403 (с 2026-04 img2.imglib.info блокируется DDoS-Guard, рабочий — img3.mixlib.me)."
 }];
 
 const MANGALIB_SITE_ID = 1;
