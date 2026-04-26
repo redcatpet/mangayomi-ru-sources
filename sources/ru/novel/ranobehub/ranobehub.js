@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.3.8",
+    "version": "0.3.9",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobehub.js",
@@ -68,12 +68,30 @@ class DefaultExtension extends MProvider {
         return this.parseList(res.body);
     }
     async search(query, page, filters) {
-        const res = await this.client.get(
-            `${this.source.apiUrl}/search?page=${page}&query=${encodeURIComponent(query || "")}`,
-            this.headers
-        );
+        const q = (query || "").trim();
+        if (!q) {
+            // Empty query — fall back to popular catalog (covers Mangayomi's
+            // "Recommendations" feature when called with empty query).
+            return await this.getPopular(page);
+        }
+        // /api/search?query=... is a paginated catalog that ignores the query.
+        // Real fulltext search is /api/fulltext/global?query=...&take=N — used by the
+        // website's search box (route name "api.fulltext.search" in build.js).
+        // Response is `[{meta: {key, title}, data: [...]}]` — pull the "ranobe" group.
+        const url = `${this.source.baseUrl}/api/fulltext/global?query=${encodeURIComponent(q)}&take=30`;
+        const res = await this.client.get(url, this.headers);
         if (res.statusCode !== 200) return { list: [], hasNextPage: false };
-        return this.parseList(res.body);
+        let groups;
+        try { groups = JSON.parse(res.body); } catch (e) { return { list: [], hasNextPage: false }; }
+        const ranobeGroup = (Array.isArray(groups) ? groups : []).find(g => g && g.meta && g.meta.key === "ranobe");
+        const items = (ranobeGroup && ranobeGroup.data) || [];
+        const list = items.map(r => ({
+            name: (r.names && (r.names.rus || r.names.eng || r.names.original)) || r.name || "",
+            // Detail-page covers come from /api/ranobe/{id} — list items don't carry posters.
+            imageUrl: (r.poster && (r.poster.medium || r.poster.small)) || (r.posters && (r.posters.medium || r.posters.small)) || "",
+            link: this.extractSlug(r)
+        })).filter(x => x.name && x.link);
+        return { list, hasNextPage: false };
     }
 
     async getDetail(slug) {
