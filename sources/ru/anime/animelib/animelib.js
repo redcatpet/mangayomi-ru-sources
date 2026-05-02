@@ -11,7 +11,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.5.2",
+    "version": "0.6.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/anime/animelib.js",
@@ -54,12 +54,21 @@ class DefaultExtension extends MProvider {
             status: libParseStatus(info.status && libCoerceString(info.status.label)),
             description: libCoerceString(info.summary || info.description || ""),
             genre: (info.genres || []).map(x => libCoerceString(x && x.name)).filter(Boolean),
-            episodes: episodes.map(ep => ({
-                name: `Сезон ${ep.season || 1} · Эпизод ${ep.number || ep.item_number || "?"}` + (ep.name ? `: ${libCoerceString(ep.name)}` : ""),
-                url: `${this.source.apiUrl}/episodes/${ep.id}`,
-                dateUpload: ep.created_at ? new Date(ep.created_at).valueOf().toString() : Date.now().toString(),
-                scanlator: null
-            })).reverse()
+            episodes: episodes.map(ep => {
+                // v0.7.70-compatible: episode number FIRST so ChapterRecognition
+                // picks it, not the season. Season tag goes in parens at the end
+                // and is omitted for single-season titles.
+                const epNum = ep.number || ep.item_number || "?";
+                const epTitle = ep.name ? `: ${libCoerceString(ep.name)}` : "";
+                const seasonNum = ep.season || 1;
+                const seasonSuffix = seasonNum > 1 ? ` (С${seasonNum})` : "";
+                return {
+                    name: `Эпизод ${epNum}${epTitle}${seasonSuffix}`,
+                    url: `${this.source.apiUrl}/episodes/${ep.id}`,
+                    dateUpload: ep.created_at ? new Date(ep.created_at).valueOf().toString() : Date.now().toString(),
+                    scanlator: null
+                };
+            }).reverse()
         };
     }
 

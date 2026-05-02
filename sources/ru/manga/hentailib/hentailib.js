@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.5.1",
+    "version": "0.6.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/hentailib.js",

@@ -10,7 +10,7 @@ const mangayomiSources = [{
     "itemType": 2,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.5.1",
+    "version": "0.6.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/novel/ranobelib.js",
@@ -54,8 +54,12 @@ class DefaultExtension extends MProvider {
                 const branchId = c.branches && c.branches[0] && c.branches[0].branch_id;
                 let url = `${chBase}?number=${c.number}&volume=${c.volume}`;
                 if (branchId) url += `&branch_id=${branchId}`;
+                // v0.7.70-compatible: chapter number FIRST, volume in parens
+                // last so ChapterRecognition picks chapter, not volume.
+                const chTitle = c.name ? `: ${libCoerceString(c.name)}` : "";
+                const volSuffix = (c.volume != null && c.volume !== 0 && c.volume !== "0") ? ` (т. ${c.volume})` : "";
                 return {
-                    name: `Том ${c.volume} Глава ${c.number}` + (c.name ? `: ${libCoerceString(c.name)}` : ""),
+                    name: `Глава ${c.number}${chTitle}${volSuffix}`,
                     url,
                     dateUpload: new Date((c.branches && c.branches[0] && c.branches[0].created_at) || Date.now()).valueOf().toString(),
                     scanlator: (c.branches && c.branches[0] && (c.branches[0].teams || []).map(t => libCoerceString(t && t.name)).filter(Boolean).join(", ")) || null

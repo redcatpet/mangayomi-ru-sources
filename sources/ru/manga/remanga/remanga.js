@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/remanga.js",
@@ -142,8 +142,12 @@ class DefaultExtension extends MProvider {
             for (const c of arr) {
                 if (c.is_published === false) continue;
                 if (c.is_paid && !c.is_bought && !c.is_free_today) continue;
+                // Chapter number FIRST so Mangayomi v0.7.70 ChapterRecognition
+                // picks it, not the volume. Volume goes in parens at the end.
+                const chTitle = c.name ? `: ${c.name}` : "";
+                const volSuffix = (c.tome != null && c.tome !== 0 && c.tome !== "0") ? ` (т. ${c.tome})` : "";
                 chapters.push({
-                    name: `Том ${c.tome} · Глава ${c.chapter}` + (c.name ? `: ${c.name}` : ""),
+                    name: `Глава ${c.chapter}${chTitle}${volSuffix}`,
                     url: `${this.source.apiUrl}/titles/chapters/${c.id}/`,
                     dateUpload: c.upload_date ? new Date(c.upload_date).valueOf().toString() : Date.now().toString(),
                     scanlator: (c.publishers || []).map(p => p.name).join(", ") || null

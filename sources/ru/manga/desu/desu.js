@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": false,
     "hasCloudflare": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/desu.js",
@@ -123,12 +123,18 @@ class DefaultExtension extends MProvider {
             return { name: id, imageUrl: "", description: "(Ошибка загрузки)", status: 5, genre: [], chapters: [] };
         }
         const m = (JSON.parse(res.body).response) || {};
-        const chapters = ((m.chapters && m.chapters.list) || []).map(c => ({
-            name: `Том ${c.vol} Глава ${c.ch}` + (c.title ? `: ${c.title}` : ""),
-            url: `${this.getApiUrl()}/${id}/chapter/${c.id}`,
-            dateUpload: c.date ? String(c.date * 1000) : Date.now().toString(),
-            scanlator: null
-        }));
+        // Chapter number FIRST so Mangayomi v0.7.70 ChapterRecognition picks it,
+        // not the volume. Volume goes in parens at the end.
+        const chapters = ((m.chapters && m.chapters.list) || []).map(c => {
+            const chTitle = c.title ? `: ${c.title}` : "";
+            const volSuffix = (c.vol != null && c.vol !== 0 && c.vol !== "0") ? ` (т. ${c.vol})` : "";
+            return {
+                name: `Глава ${c.ch}${chTitle}${volSuffix}`,
+                url: `${this.getApiUrl()}/${id}/chapter/${c.id}`,
+                dateUpload: c.date ? String(c.date * 1000) : Date.now().toString(),
+                scanlator: null
+            };
+        });
 
         const statusMap = { "ongoing": 0, "released": 1, "copyrighted": 3, "anons": 4 };
         let genre = [];

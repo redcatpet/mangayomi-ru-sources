@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 0,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.3.1",
+    "version": "0.4.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "ru/manga/senkognito.js",
@@ -419,11 +419,13 @@ class DefaultExtension extends MProvider {
                 const conn = cr.data.mangaChapters;
                 for (const e of (conn.edges || [])) {
                     const n = e.node || {};
-                    const numLabel = n.number != null ? `Гл. ${n.number}` : "Глава";
-                    const volLabel = n.volume != null ? `Том ${n.volume} · ` : "";
+                    // v0.7.70-compatible: chapter number FIRST so ChapterRecognition
+                    // picks it, not the volume.
+                    const numLabel = n.number != null ? `Глава ${n.number}` : "Глава";
                     const titleLabel = n.name ? `: ${n.name}` : "";
+                    const volSuffix = n.volume != null ? ` (т. ${n.volume})` : "";
                     chapters.push({
-                        name: `${volLabel}${numLabel}${titleLabel}`,
+                        name: `${numLabel}${titleLabel}${volSuffix}`,
                         url: n.slug || n.id,
                         dateUpload: n.createdAt ? new Date(n.createdAt).valueOf().toString() : Date.now().toString(),
                         scanlator: teamName || null
